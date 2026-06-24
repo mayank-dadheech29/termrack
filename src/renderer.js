@@ -444,6 +444,7 @@ window.term.onMenu((action) => {
     case 'copy': copyActive(); break;
     case 'paste': pasteActive(); break;
     case 'selectall': selectAllActive(); break;
+    case 'toggle-sidebar': toggleSidebar(); break;
   }
 });
 
@@ -467,6 +468,51 @@ window.addEventListener('keydown', (e) => {
     if (ids[idx]) { e.preventDefault(); activate(ids[idx]); }
   }
 });
+
+// ---------- Sidebar collapse + drag-resize ----------
+const appEl = document.getElementById('app');
+const resizerEl = document.getElementById('resizer');
+const LS_SIDEBAR_W = 'termrack.sidebarWidth';
+const LS_SIDEBAR_COLLAPSED = 'termrack.sidebarCollapsed';
+
+function fitActiveTerm() {
+  const s = sessions.get(activeId);
+  if (s) requestAnimationFrame(() => s.fit.fit());
+}
+
+(function sidebar() {
+  const savedW = parseInt(localStorage.getItem(LS_SIDEBAR_W), 10);
+  if (Number.isFinite(savedW)) appEl.style.setProperty('--sidebar-width', `${savedW}px`);
+  if (localStorage.getItem(LS_SIDEBAR_COLLAPSED) === '1') appEl.classList.add('sidebar-collapsed');
+
+  let dragging = false;
+  resizerEl.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    resizerEl.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const w = Math.max(160, Math.min(440, e.clientX));
+    appEl.style.setProperty('--sidebar-width', `${w}px`);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    resizerEl.classList.remove('dragging');
+    document.body.style.cursor = '';
+    const w = parseInt(getComputedStyle(appEl).getPropertyValue('--sidebar-width'), 10);
+    if (Number.isFinite(w)) localStorage.setItem(LS_SIDEBAR_W, String(w));
+    fitActiveTerm();
+  });
+})();
+
+function toggleSidebar() {
+  const collapsed = appEl.classList.toggle('sidebar-collapsed');
+  localStorage.setItem(LS_SIDEBAR_COLLAPSED, collapsed ? '1' : '0');
+  fitActiveTerm();
+}
 
 // ---------- Pomodoro timer ----------
 // Classic cycle: 25m focus, 5m short break, 15m long break after every 4th

@@ -50,6 +50,8 @@ function buildMenu(win) {
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: () => send('new') },
         { label: 'Close Terminal', accelerator: 'CmdOrCtrl+W', click: () => send('close') },
         { type: 'separator' },
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send('toggle-sidebar') },
+        { type: 'separator' },
         { label: 'Increase Font Size', accelerator: 'CmdOrCtrl+Plus', click: () => send('font-in') },
         { label: 'Increase Font Size ', accelerator: 'CmdOrCtrl+=', visible: false, acceleratorWorksWhenHidden: true, click: () => send('font-in') },
         { label: 'Decrease Font Size', accelerator: 'CmdOrCtrl+-', click: () => send('font-out') },
