@@ -6,8 +6,9 @@ right. Each session is a **real shell** running in a pseudo-terminal (PTY), so i
 behaves exactly like Terminal.app — colors, `vim`, `htop`, Ctrl-C, tab
 completion, the lot.
 
-No telemetry, no network calls, no third-party services. It's ~600 lines of code
-you can read end to end.
+No telemetry, no network calls, no third-party services.
+
+📖 **[Full documentation, shortcuts & roadmap → DOCS.md](DOCS.md)**
 
 ## Stack
 
