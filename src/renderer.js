@@ -841,9 +841,10 @@ function toggleSidebar() {
     start();
   }
 
-  // Click the time (when stopped) to edit the current mode's minutes.
+  // Click the time to edit the current mode's minutes (pauses if running).
   function editDuration() {
-    if (running || displayEl.classList.contains('editing')) return;
+    if (displayEl.classList.contains('editing')) return;
+    if (running) pause();
     displayEl.classList.add('editing');
     const input = document.createElement('input');
     input.id = 'timer-edit';
