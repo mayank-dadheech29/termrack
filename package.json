@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Termrack — a cmux-style terminal: sidebar of sessions, real PTY shells in the main pane.",
   "main": "src/main.js",
-  "author": "",
+  "author": "Mayank Dadheech",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
