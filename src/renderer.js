@@ -748,19 +748,46 @@ function toggleSidebar() {
 }
 
 // ---------- Pomodoro timer ----------
-// 25m focus, 5m short break, 15m long break after every 4th focus.
-// setInterval runs only while counting down — zero idle cost when off.
+// Focus / short break / long break (after every 4th focus). Durations are
+// configurable (click the time when stopped). setInterval runs only while
+// counting down — zero idle cost when off. Tracks focus sessions per day.
 (function timer() {
-  const DURATIONS = { focus: 25 * 60, short: 5 * 60, long: 15 * 60 };
   const LABELS = { focus: 'Focus', short: 'Break', long: 'Long Break' };
+  const DEFAULT_MIN = { focus: 25, short: 5, long: 15 };
+  const LS_DUR = 'termrack.timer.durations';
+  const LS_TODAY = 'termrack.timer.today';
 
   const root = document.getElementById('timer');
   const modeEl = document.getElementById('timer-mode');
   const displayEl = document.getElementById('timer-display');
   const toggleBtn = document.getElementById('timer-toggle');
+  const todayEl = document.getElementById('timer-today');
+
+  // Durations (minutes), persisted.
+  const mins = { ...DEFAULT_MIN };
+  try { Object.assign(mins, JSON.parse(localStorage.getItem(LS_DUR) || '{}')); } catch (_) {}
+  const dur = (m) => mins[m] * 60;
+  const saveDur = () => localStorage.setItem(LS_DUR, JSON.stringify(mins));
+
+  // "Completed focus sessions today", reset when the date rolls over.
+  function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  }
+  let today = { date: todayKey(), count: 0 };
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_TODAY) || 'null');
+    if (saved && saved.date === today.date) today = saved;
+  } catch (_) {}
+  const saveToday = () => localStorage.setItem(LS_TODAY, JSON.stringify(today));
+  function bumpToday() {
+    if (today.date !== todayKey()) today = { date: todayKey(), count: 0 };
+    today.count += 1;
+    saveToday();
+  }
 
   let mode = 'focus';
-  let remaining = DURATIONS[mode];
+  let remaining = dur(mode);
   let running = false;
   let handle = null;
   let completedFocus = 0;
@@ -768,12 +795,13 @@ function toggleSidebar() {
   function render() {
     const m = Math.floor(remaining / 60).toString().padStart(2, '0');
     const s = (remaining % 60).toString().padStart(2, '0');
-    displayEl.textContent = `${m}:${s}`;
+    if (!displayEl.classList.contains('editing')) displayEl.textContent = `${m}:${s}`;
     modeEl.textContent = LABELS[mode];
     root.dataset.mode = mode;
     toggleBtn.textContent = running ? '⏸' : '▶';
+    todayEl.textContent = `🍅 ${today.count} today`;
   }
-  function setMode(m) { mode = m; remaining = DURATIONS[m]; render(); }
+  function setMode(m) { mode = m; remaining = dur(m); render(); }
   function start() { if (running) return; running = true; handle = setInterval(tick, 1000); render(); }
   function pause() { running = false; if (handle) { clearInterval(handle); handle = null; } render(); }
   function tick() { remaining -= 1; if (remaining <= 0) { phaseEnd(); return; } render(); }
@@ -802,6 +830,7 @@ function toggleSidebar() {
     let next;
     if (mode === 'focus') {
       completedFocus += 1;
+      bumpToday();
       next = completedFocus % 4 === 0 ? 'long' : 'short';
       notify('Focus complete', `Nice work — time for a ${next === 'long' ? 'long ' : ''}break.`);
     } else {
@@ -812,12 +841,49 @@ function toggleSidebar() {
     start();
   }
 
+  // Click the time (when stopped) to edit the current mode's minutes.
+  function editDuration() {
+    if (running || displayEl.classList.contains('editing')) return;
+    displayEl.classList.add('editing');
+    const input = document.createElement('input');
+    input.id = 'timer-edit';
+    input.type = 'number';
+    input.min = '1';
+    input.max = '180';
+    input.value = String(mins[mode]);
+    displayEl.textContent = '';
+    displayEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const commit = (save) => {
+      if (done) return;
+      done = true;
+      const v = parseInt(input.value, 10);
+      if (save && Number.isFinite(v) && v >= 1 && v <= 180) {
+        mins[mode] = v;
+        saveDur();
+        remaining = dur(mode);
+      }
+      displayEl.classList.remove('editing');
+      render();
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') commit(true);
+      else if (e.key === 'Escape') commit(false);
+    });
+    input.addEventListener('blur', () => commit(true));
+  }
+
   toggleBtn.addEventListener('click', () => (running ? pause() : start()));
   document.getElementById('timer-reset').addEventListener('click', () => { pause(); setMode(mode); });
   document.getElementById('timer-skip').addEventListener('click', () => {
     pause();
     setMode(mode === 'focus' ? 'short' : 'focus');
   });
+  displayEl.addEventListener('click', editDuration);
   render();
 })();
 

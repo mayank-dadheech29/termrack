@@ -137,6 +137,26 @@ body {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+  cursor: pointer;
+}
+#timer-display.editing { cursor: text; }
+#timer-edit {
+  width: 64px;
+  font-family: Menlo, "SF Mono", Monaco, monospace;
+  font-size: 22px;
+  text-align: right;
+  color: var(--text);
+  background: #0d0d0f;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 0 4px;
+  outline: none;
+}
+#timer-today {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
 }
 #timer-controls {
   grid-column: 1;
