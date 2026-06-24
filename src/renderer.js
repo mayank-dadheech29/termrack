@@ -156,6 +156,19 @@ function createSession(opts) {
   term.onData((data) => window.term.input(id, data));
   term.onResize(({ cols, rows }) => window.term.resize(id, cols, rows));
 
+  // Copy-on-select: as soon as text is highlighted, put it on the clipboard.
+  term.onSelectionChange(() => {
+    const sel = term.getSelection();
+    if (sel && sel.length) window.term.clipboardWrite(sel);
+  });
+
+  // Right-click pastes the clipboard into this terminal.
+  host.addEventListener('contextmenu', async (e) => {
+    e.preventDefault();
+    const text = await window.term.clipboardRead();
+    if (text) term.paste(text);
+  });
+
   // Programs that set the window title (\e]0;...\a) rename the tab — unless the
   // user gave it a custom name, which always wins.
   term.onTitleChange((title) => {
@@ -307,6 +320,40 @@ function clearActive() {
   if (s) s.term.clear();
 }
 
+// ---------- Copy / Paste / Select All (active terminal) ----------
+// These run from global ⌘C/⌘V/⌘A accelerators, so defer to the find input
+// when it has focus instead of acting on the terminal.
+function copyActive() {
+  if (document.activeElement === findInput) {
+    const t = findInput.value.substring(findInput.selectionStart, findInput.selectionEnd);
+    if (t) window.term.clipboardWrite(t);
+    return;
+  }
+  const s = sessions.get(activeId);
+  if (!s) return;
+  const sel = s.term.getSelection();
+  if (sel && sel.length) window.term.clipboardWrite(sel);
+}
+async function pasteActive() {
+  const text = await window.term.clipboardRead();
+  if (!text) return;
+  if (document.activeElement === findInput) {
+    const a = findInput.selectionStart;
+    const b = findInput.selectionEnd;
+    findInput.value = findInput.value.slice(0, a) + text + findInput.value.slice(b);
+    findInput.selectionStart = findInput.selectionEnd = a + text.length;
+    runFind();
+    return;
+  }
+  const s = sessions.get(activeId);
+  if (s) s.term.paste(text);
+}
+function selectAllActive() {
+  if (document.activeElement === findInput) { findInput.select(); return; }
+  const s = sessions.get(activeId);
+  if (s) s.term.selectAll();
+}
+
 // ---------- Find ----------
 function showFind() {
   findbar.hidden = false;
@@ -384,6 +431,9 @@ window.term.onMenu((action) => {
     case 'font-reset': setFont(13); break;
     case 'clear': clearActive(); break;
     case 'find': toggleFind(); break;
+    case 'copy': copyActive(); break;
+    case 'paste': pasteActive(); break;
+    case 'selectall': selectAllActive(); break;
   }
 });
 
