@@ -1,0 +1,51 @@
+{
+  "name": "termrack",
+  "version": "0.1.0",
+  "description": "Termrack — a cmux-style terminal: sidebar of sessions, real PTY shells in the main pane.",
+  "main": "src/main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild -f -w node-pty",
+    "postinstall": "electron-rebuild -f -w node-pty",
+    "dist": "electron-builder --mac",
+    "deploy": "npm run dist && codesign --force --deep --sign - dist/mac-arm64/Termrack.app && rm -rf /Applications/Termrack.app && cp -R dist/mac-arm64/Termrack.app /Applications/ && echo 'Termrack installed to /Applications'"
+  },
+  "build": {
+    "appId": "app.happydose.termrack",
+    "productName": "Termrack",
+    "files": [
+      "src/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dir"
+        },
+        {
+          "target": "dmg"
+        }
+      ],
+      "identity": null
+    },
+    "dmg": {
+      "title": "Termrack"
+    }
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
