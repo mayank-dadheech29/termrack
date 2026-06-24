@@ -244,10 +244,16 @@ body {
 .tab-root.active { display: flex; }
 .tab-root.active > * { flex: 1 1 0; min-width: 0; min-height: 0; }
 
-.split { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; gap: 6px; }
+.split { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; gap: 0; }
 .split.row { flex-direction: row; }
 .split.col { flex-direction: column; }
-.split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+.split > *:not(.pane-divider) { min-width: 0; min-height: 0; }
+
+/* Draggable divider between sibling panes. */
+.pane-divider { flex: 0 0 6px; background: transparent; }
+.pane-divider.row { cursor: col-resize; }
+.pane-divider.col { cursor: row-resize; }
+.pane-divider:hover, .pane-divider.dragging { background: var(--accent); }
 
 .pane {
   position: relative;

@@ -267,8 +267,72 @@ function renderNode(node) {
   if (isLeaf(node)) return panes.get(node.leaf).el;
   const div = document.createElement('div');
   div.className = 'split ' + (node.dir === 'col' ? 'col' : 'row');
-  node.children.forEach((c) => div.appendChild(renderNode(c)));
+  if (!node.sizes || node.sizes.length !== node.children.length) {
+    node.sizes = node.children.map(() => 1);
+  }
+  node.children.forEach((c, i) => {
+    const childEl = renderNode(c);
+    childEl.style.flex = `${node.sizes[i]} 1 0`;
+    div.appendChild(childEl);
+    if (i < node.children.length - 1) {
+      const divider = document.createElement('div');
+      divider.className = 'pane-divider ' + (node.dir === 'col' ? 'col' : 'row');
+      attachDividerDrag(divider, node, i);
+      div.appendChild(divider);
+    }
+  });
   return div;
+}
+
+// Drag a divider to reweight the two panes it sits between.
+function attachDividerDrag(divider, node, i) {
+  divider.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const tab = tabs.get(activeTabId);
+    const dir = node.dir;
+    const parentEl = divider.parentElement;
+    const childEls = [...parentEl.children].filter((el) => !el.classList.contains('pane-divider'));
+    const aEl = childEls[i];
+    const bEl = childEls[i + 1];
+    if (!aEl || !bEl) return;
+
+    const sizes = node.sizes;
+    const startA = sizes[i];
+    const startB = sizes[i + 1];
+    const sum = startA + startB;
+    const aRect = aEl.getBoundingClientRect();
+    const bRect = bEl.getBoundingClientRect();
+    const pxAB = dir === 'row' ? aRect.width + bRect.width : aRect.height + bRect.height;
+    const startPos = dir === 'row' ? e.clientX : e.clientY;
+    const growPerPx = sum / Math.max(1, pxAB);
+    const minGrow = growPerPx * 60; // keep panes at least ~60px
+
+    divider.classList.add('dragging');
+    appEl.classList.add('resizing');
+    document.body.style.cursor = dir === 'row' ? 'col-resize' : 'row-resize';
+
+    const move = (ev) => {
+      const cur = dir === 'row' ? ev.clientX : ev.clientY;
+      let na = startA + (cur - startPos) * growPerPx;
+      na = Math.max(minGrow, Math.min(sum - minGrow, na));
+      sizes[i] = na;
+      sizes[i + 1] = sum - na;
+      aEl.style.flex = `${sizes[i]} 1 0`;
+      bEl.style.flex = `${sizes[i + 1]} 1 0`;
+      if (tab) fitTab(tab);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      divider.classList.remove('dragging');
+      appEl.classList.remove('resizing');
+      document.body.style.cursor = '';
+      if (tab) fitTab(tab);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  });
 }
 
 function updatePaneHighlight(tab) {
@@ -337,10 +401,15 @@ async function splitActive(dir) {
 
   const found = findParent(tab.root, tab.activePaneId, null);
   if (found && found.parent && found.parent.dir === dir) {
-    const idx = found.parent.children.indexOf(found.node);
-    found.parent.children.splice(idx + 1, 0, { leaf: np.id });
+    const parent = found.parent;
+    const idx = parent.children.indexOf(found.node);
+    if (!parent.sizes || parent.sizes.length !== parent.children.length) {
+      parent.sizes = parent.children.map(() => 1);
+    }
+    parent.children.splice(idx + 1, 0, { leaf: np.id });
+    parent.sizes.splice(idx + 1, 0, 1);
   } else {
-    const newSplit = { dir, children: [{ leaf: tab.activePaneId }, { leaf: np.id }] };
+    const newSplit = { dir, children: [{ leaf: tab.activePaneId }, { leaf: np.id }], sizes: [1, 1] };
     if (found && found.parent) {
       const idx = found.parent.children.indexOf(found.node);
       found.parent.children[idx] = newSplit;
@@ -364,13 +433,19 @@ function closePane(paneId) {
   // Last pane in the tab → close the whole tab.
   if (countLeaves(tab.root) <= 1) { closeTab(tab.id); return; }
 
-  // Prune the leaf and collapse any now-single-child split.
+  // Prune the leaf and collapse any now-single-child split, keeping the
+  // surviving children's sizes aligned.
   const prune = (node) => {
     if (isLeaf(node)) return node.leaf === paneId ? null : node;
-    const kids = node.children.map(prune).filter(Boolean);
+    const kids = [];
+    const sizes = [];
+    node.children.forEach((c, i) => {
+      const r = prune(c);
+      if (r) { kids.push(r); sizes.push(node.sizes ? node.sizes[i] : 1); }
+    });
     if (kids.length === 0) return null;
     if (kids.length === 1) return kids[0];
-    return { dir: node.dir, children: kids };
+    return { dir: node.dir, children: kids, sizes };
   };
   tab.root = prune(tab.root);
 
