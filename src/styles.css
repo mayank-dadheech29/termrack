@@ -141,17 +141,24 @@ body {
 }
 #timer-display.editing { cursor: text; }
 #timer-edit {
-  width: 64px;
+  width: 92px;
   font-family: Menlo, "SF Mono", Monaco, monospace;
-  font-size: 22px;
+  font-size: 26px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--text);
-  background: #0d0d0f;
-  border: 1px solid var(--accent);
-  border-radius: 5px;
-  padding: 0 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0;
+  padding: 0 2px 2px;
   outline: none;
+  caret-color: var(--accent);
 }
+#timer-edit::-webkit-inner-spin-button,
+#timer-edit::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+#timer-edit::selection { background: var(--selection, #33405e); color: var(--text); }
 #timer-today {
   grid-column: 1 / -1;
   margin-top: 6px;

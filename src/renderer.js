@@ -848,10 +848,15 @@ function toggleSidebar() {
     displayEl.classList.add('editing');
     const input = document.createElement('input');
     input.id = 'timer-edit';
-    input.type = 'number';
-    input.min = '1';
-    input.max = '180';
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.maxLength = 3;
     input.value = String(mins[mode]);
+    input.setAttribute('aria-label', 'Minutes');
+    // Only allow digits as the user types.
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/[^0-9]/g, '');
+    });
     displayEl.textContent = '';
     displayEl.appendChild(input);
     input.focus();
