@@ -1,12 +1,32 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
+const { execFile } = require('child_process');
 const pty = require('node-pty');
 
 // Keep every live PTY keyed by the id the renderer assigned it.
 const ptys = new Map();
+let mainWindow = null;
 
 const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/zsh');
+
+// Absolute path so it resolves under a packaged app's minimal PATH.
+const LSOF = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => fs.existsSync(p)) || 'lsof';
+
+// Resolve a shell's current working directory from its PID, without touching
+// the user's shell config. `lsof` reports the cwd file descriptor for the
+// process; event-driven (called on tab-switch / quit), never polled.
+function getCwd(pid) {
+  return new Promise((resolve) => {
+    if (!pid) return resolve(null);
+    execFile(LSOF, ['-a', '-d', 'cwd', '-p', String(pid), '-Fn'], { timeout: 2000 }, (err, stdout) => {
+      if (err || !stdout) return resolve(null);
+      const line = stdout.split('\n').find((l) => l.startsWith('n'));
+      resolve(line ? line.slice(1).trim() : null);
+    });
+  });
+}
 
 // Application menu. Defining our own removes Electron's default View > Zoom
 // (CmdOrCtrl +/-/0 used to zoom the whole window); here those keys are routed
@@ -53,6 +73,7 @@ function createWindow() {
     },
   });
 
+  mainWindow = win;
   win.loadFile(path.join(__dirname, 'index.html'));
   buildMenu(win);
 
@@ -75,7 +96,7 @@ function createWindow() {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
-      cwd: cwd && cwd.length ? cwd : os.homedir(),
+      cwd: (cwd && cwd.length && fs.existsSync(cwd)) ? cwd : os.homedir(),
       env: { ...process.env, TERM: 'xterm-256color' },
     });
 
@@ -115,6 +136,23 @@ function createWindow() {
     ptys.clear();
   });
 }
+
+// Renderer asks for a session's live cwd (on tab-switch and at quit).
+ipcMain.handle('pty:cwd', async (_evt, { id }) => {
+  const proc = ptys.get(id);
+  return proc ? getCwd(proc.pid) : null;
+});
+
+// On quit, give the renderer a chance to capture every tab's cwd and persist
+// the layout before we tear the PTYs down. Fall back to quitting if it stalls.
+let quitting = false;
+app.on('before-quit', (e) => {
+  if (quitting || !mainWindow || mainWindow.isDestroyed()) return;
+  e.preventDefault();
+  mainWindow.webContents.send('app:flush');
+  setTimeout(() => { quitting = true; app.quit(); }, 1000);
+});
+ipcMain.on('app:flushed', () => { quitting = true; app.quit(); });
 
 app.whenReady().then(() => {
   createWindow();

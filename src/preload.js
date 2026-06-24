@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('term', {
   input: (id, data) => ipcRenderer.send('pty:input', { id, data }),
   resize: (id, cols, rows) => ipcRenderer.send('pty:resize', { id, cols, rows }),
   kill: (id) => ipcRenderer.send('pty:kill', { id }),
+  cwd: (id) => ipcRenderer.invoke('pty:cwd', { id }),
+  flushed: () => ipcRenderer.send('app:flushed'),
 
   onData: (cb) => {
     const handler = (_e, payload) => cb(payload);
@@ -21,5 +23,10 @@ contextBridge.exposeInMainWorld('term', {
     const handler = (_e, action) => cb(action);
     ipcRenderer.on('menu:action', handler);
     return () => ipcRenderer.removeListener('menu:action', handler);
+  },
+  onFlush: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('app:flush', handler);
+    return () => ipcRenderer.removeListener('app:flush', handler);
   },
 });
