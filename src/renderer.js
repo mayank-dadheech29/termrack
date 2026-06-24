@@ -55,15 +55,26 @@ function loadFontSize() {
 function saveLayout() {
   const arr = [...listEl.children].map((li) => {
     const s = sessions.get(li.dataset.id);
-    return s ? { name: s.name, custom: !!s.custom } : null;
+    return s ? { name: s.name, custom: !!s.custom, cwd: s.cwd || '' } : null;
   }).filter(Boolean);
   localStorage.setItem(LS_LAYOUT, JSON.stringify(arr));
+}
+
+// Refresh a session's last-known working directory from the live shell.
+// Called on natural events (tab-switch, quit) — never on a timer.
+async function refreshCwd(session) {
+  if (!session || !session.alive) return;
+  try {
+    const c = await window.term.cwd(session.id);
+    if (c) session.cwd = c;
+  } catch (_) { /* shell gone */ }
 }
 
 function createSession(opts) {
   const id = uid();
   let name;
   let custom = false;
+  const initialCwd = (opts && opts.cwd) || '';
   if (opts && opts.name) {
     name = opts.name;
     custom = !!opts.custom;
@@ -126,7 +137,7 @@ function createSession(opts) {
   wireDrag(item);
   listEl.appendChild(item);
 
-  const session = { id, name, custom, term, fit, search, host, item, alive: true };
+  const session = { id, name, custom, cwd: initialCwd, term, fit, search, host, item, alive: true };
   sessions.set(id, session);
 
   // Keep the find counter live for the active terminal.
@@ -140,7 +151,7 @@ function createSession(opts) {
   // Show it first so fit() can measure real pixels, then spawn the PTY sized to fit.
   activate(id);
   fit.fit();
-  window.term.create(id, term.cols, term.rows, '');
+  window.term.create(id, term.cols, term.rows, initialCwd);
 
   term.onData((data) => window.term.input(id, data));
   term.onResize(({ cols, rows }) => window.term.resize(id, cols, rows));
@@ -162,6 +173,13 @@ function createSession(opts) {
 function activate(id) {
   const session = sessions.get(id);
   if (!session) return;
+
+  // Capture the cwd of the tab we're leaving, so it persists across restarts.
+  const leaving = sessions.get(activeId);
+  if (leaving && leaving.id !== id) {
+    refreshCwd(leaving).then(saveLayout);
+  }
+
   activeId = id;
 
   for (const s of sessions.values()) {
@@ -344,6 +362,16 @@ window.term.onExit(({ id }) => {
   session.alive = false;
   session.item.classList.add('dead');
   session.term.write('\r\n\x1b[90m[process exited — ⌘W to close]\x1b[0m\r\n');
+});
+
+// ---------- Quit flush: capture every live tab's cwd, then persist ----------
+window.term.onFlush(async () => {
+  try {
+    await Promise.all([...sessions.values()].map(refreshCwd));
+    saveLayout();
+  } finally {
+    window.term.flushed();
+  }
 });
 
 // ---------- Menu actions (from main process) ----------
