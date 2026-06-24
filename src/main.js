@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, clipboard } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -35,7 +35,15 @@ function buildMenu(win) {
   const send = (action) => win.webContents.send('menu:action', action);
   const template = [
     { role: 'appMenu' },
-    { role: 'editMenu' }, // Copy / Paste / Select All work in the terminal
+    {
+      label: 'Edit',
+      submenu: [
+        { label: 'Copy', accelerator: 'CmdOrCtrl+C', click: () => send('copy') },
+        { label: 'Paste', accelerator: 'CmdOrCtrl+V', click: () => send('paste') },
+        { type: 'separator' },
+        { label: 'Select All', accelerator: 'CmdOrCtrl+A', click: () => send('selectall') },
+      ],
+    },
     {
       label: 'View',
       submenu: [
@@ -142,6 +150,10 @@ ipcMain.handle('pty:cwd', async (_evt, { id }) => {
   const proc = ptys.get(id);
   return proc ? getCwd(proc.pid) : null;
 });
+
+// Clipboard bridge (the sandboxed renderer can't touch the clipboard directly).
+ipcMain.on('clip:write', (_evt, text) => { if (typeof text === 'string') clipboard.writeText(text); });
+ipcMain.handle('clip:read', () => clipboard.readText());
 
 // On quit, give the renderer a chance to capture every tab's cwd and persist
 // the layout before we tear the PTYs down. Fall back to quitting if it stalls.

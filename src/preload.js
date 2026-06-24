@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('term', {
   kill: (id) => ipcRenderer.send('pty:kill', { id }),
   cwd: (id) => ipcRenderer.invoke('pty:cwd', { id }),
   flushed: () => ipcRenderer.send('app:flushed'),
+  clipboardWrite: (text) => ipcRenderer.send('clip:write', text),
+  clipboardRead: () => ipcRenderer.invoke('clip:read'),
 
   onData: (cb) => {
     const handler = (_e, payload) => cb(payload);
