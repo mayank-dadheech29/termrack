@@ -69,6 +69,62 @@ body {
 }
 #new-session:hover { background: var(--accent); }
 
+/* ---------- Pomodoro timer ---------- */
+#timer {
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 8px;
+  -webkit-app-region: no-drag;
+}
+#timer-mode {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+#timer[data-mode="short"] #timer-mode,
+#timer[data-mode="long"] #timer-mode { color: #3ecf6b; }
+#timer.done { animation: timer-flash 0.8s ease-in-out 3; }
+@keyframes timer-flash {
+  0%, 100% { background: var(--bg); }
+  50% { background: #2b2b33; }
+}
+#timer-display {
+  grid-row: span 2;
+  grid-column: 2;
+  justify-self: end;
+  align-self: center;
+  font-family: Menlo, "SF Mono", Monaco, monospace;
+  font-size: 26px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+#timer-controls {
+  grid-column: 1;
+  display: flex;
+  gap: 4px;
+}
+#timer-controls button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: var(--item-active);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+#timer-controls button:hover { background: var(--accent); }
+
 #session-list {
   list-style: none;
   overflow-y: auto;
