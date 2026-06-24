@@ -37,7 +37,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.22s ease;
 }
+/* No transition while actively dragging the divider (would lag the cursor). */
+#app.resizing #sidebar { transition: none; }
 
 /* Drag handle between sidebar and main pane. */
 #resizer {
@@ -52,6 +55,19 @@ body {
 /* Collapsed state (⌘B). */
 #app.sidebar-collapsed #sidebar { width: 0; border-right: none; }
 #app.sidebar-collapsed #resizer { display: none; }
+/* With the sidebar gone, the terminal would slide under the traffic lights —
+   reserve top space and a draggable strip to move the window. */
+#app.sidebar-collapsed .tab-root { padding-top: 34px; }
+#app.sidebar-collapsed #topbar-drag { display: block; }
+
+#topbar-drag {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 30px;
+  z-index: 5;
+  display: none;
+  -webkit-app-region: drag;
+}
 
 #sidebar-header {
   display: flex;
@@ -242,6 +258,34 @@ body {
 .pane .xterm { height: 100%; }
 /* Only show the focus ring once a tab actually has more than one pane. */
 .split-mode .pane.pane-active { border-color: var(--accent); }
+
+/* Per-pane close button — appears on hover only when split. */
+.pane-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 20;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(40, 40, 48, 0.9);
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: none;
+}
+.split-mode .pane .pane-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.split-mode .pane:hover .pane-close { opacity: 1; }
+.pane-close:hover { background: var(--accent); color: #fff; }
 
 #empty-state {
   position: absolute;

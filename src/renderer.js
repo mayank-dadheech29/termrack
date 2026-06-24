@@ -130,6 +130,15 @@ function createPane(opts) {
   term.loadAddon(search);
   term.open(el);
 
+  // Per-pane close button (shown on hover only when the tab is split).
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'pane-close';
+  closeBtn.title = 'Close pane (⌘W)';
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+  closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closePane(id); });
+  el.appendChild(closeBtn);
+
   const pane = { id, term, fit, search, el, alive: true, cwd, tabId: null };
   panes.set(id, pane);
 
@@ -346,11 +355,13 @@ async function splitActive(dir) {
   saveLayout();
 }
 
-function closeActivePane() {
-  const tab = tabs.get(activeTabId);
+function closePane(paneId) {
+  const pane = panes.get(paneId);
+  if (!pane) return;
+  const tab = tabs.get(pane.tabId);
   if (!tab) return;
-  const paneId = tab.activePaneId;
 
+  // Last pane in the tab → close the whole tab.
   if (countLeaves(tab.root) <= 1) { closeTab(tab.id); return; }
 
   // Prune the leaf and collapse any now-single-child split.
@@ -363,8 +374,9 @@ function closeActivePane() {
   };
   tab.root = prune(tab.root);
 
-  const p = panes.get(paneId);
-  if (p) { window.term.kill(paneId); p.term.dispose(); panes.delete(paneId); }
+  window.term.kill(paneId);
+  pane.term.dispose();
+  panes.delete(paneId);
 
   const fid = firstLeafId(tab.root);
   tab.activePaneId = fid;
@@ -372,6 +384,11 @@ function closeActivePane() {
   setActivePane(tab.id, fid);
   fitTab(tab);
   saveLayout();
+}
+
+function closeActivePane() {
+  const tab = tabs.get(activeTabId);
+  if (tab) closePane(tab.activePaneId);
 }
 
 function closeTab(id) {
@@ -624,6 +641,7 @@ function fitActiveTerm() {
     e.preventDefault();
     dragging = true;
     resizerEl.classList.add('dragging');
+    appEl.classList.add('resizing'); // suppress width transition while dragging
     document.body.style.cursor = 'col-resize';
   });
   window.addEventListener('mousemove', (e) => {
@@ -635,10 +653,16 @@ function fitActiveTerm() {
     if (!dragging) return;
     dragging = false;
     resizerEl.classList.remove('dragging');
+    appEl.classList.remove('resizing');
     document.body.style.cursor = '';
     const w = parseInt(getComputedStyle(appEl).getPropertyValue('--sidebar-width'), 10);
     if (Number.isFinite(w)) localStorage.setItem(LS_SIDEBAR_W, String(w));
     fitActiveTerm();
+  });
+
+  // Re-fit terminals once the collapse/expand animation finishes.
+  document.getElementById('sidebar').addEventListener('transitionend', (e) => {
+    if (e.propertyName === 'width') fitActiveTerm();
   });
 })();
 
