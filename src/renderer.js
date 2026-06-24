@@ -169,6 +169,16 @@ function createSession(opts) {
     if (text) term.paste(text);
   });
 
+  // ⌘⌫ deletes the whole current input line: Ctrl-E (end) then Ctrl-U (kill
+  // to start). Handled before xterm so it doesn't fall through as a backspace.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type === 'keydown' && e.metaKey && e.key === 'Backspace') {
+      window.term.input(id, '\x05\x15');
+      return false;
+    }
+    return true;
+  });
+
   // Programs that set the window title (\e]0;...\a) rename the tab — unless the
   // user gave it a custom name, which always wins.
   term.onTitleChange((title) => {
@@ -457,6 +467,102 @@ window.addEventListener('keydown', (e) => {
     if (ids[idx]) { e.preventDefault(); activate(ids[idx]); }
   }
 });
+
+// ---------- Pomodoro timer ----------
+// Classic cycle: 25m focus, 5m short break, 15m long break after every 4th
+// focus. setInterval runs only while counting down — zero idle cost when off.
+(function timer() {
+  const DURATIONS = { focus: 25 * 60, short: 5 * 60, long: 15 * 60 };
+  const LABELS = { focus: 'Focus', short: 'Break', long: 'Long Break' };
+
+  const root = document.getElementById('timer');
+  const modeEl = document.getElementById('timer-mode');
+  const displayEl = document.getElementById('timer-display');
+  const toggleBtn = document.getElementById('timer-toggle');
+
+  let mode = 'focus';
+  let remaining = DURATIONS[mode];
+  let running = false;
+  let handle = null;
+  let completedFocus = 0;
+
+  function render() {
+    const m = Math.floor(remaining / 60).toString().padStart(2, '0');
+    const s = (remaining % 60).toString().padStart(2, '0');
+    displayEl.textContent = `${m}:${s}`;
+    modeEl.textContent = LABELS[mode];
+    root.dataset.mode = mode;
+    toggleBtn.textContent = running ? '⏸' : '▶';
+  }
+
+  function setMode(m) {
+    mode = m;
+    remaining = DURATIONS[m];
+    render();
+  }
+
+  function start() {
+    if (running) return;
+    running = true;
+    handle = setInterval(tick, 1000);
+    render();
+  }
+  function pause() {
+    running = false;
+    if (handle) { clearInterval(handle); handle = null; }
+    render();
+  }
+  function tick() {
+    remaining -= 1;
+    if (remaining <= 0) { phaseEnd(); return; }
+    render();
+  }
+
+  function beep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    } catch (_) { /* audio unavailable */ }
+  }
+
+  function notify(title, body) {
+    try { new Notification(title, { body, silent: false }); } catch (_) {}
+  }
+
+  function phaseEnd() {
+    pause();
+    root.classList.remove('done'); void root.offsetWidth; root.classList.add('done');
+    beep();
+
+    let next;
+    if (mode === 'focus') {
+      completedFocus += 1;
+      next = completedFocus % 4 === 0 ? 'long' : 'short';
+      notify('Focus complete', `Nice work — time for a ${next === 'long' ? 'long ' : ''}break.`);
+    } else {
+      next = 'focus';
+      notify('Break over', 'Back to focus.');
+    }
+    setMode(next);
+    start(); // auto-start the next phase to keep the cadence going
+  }
+
+  toggleBtn.addEventListener('click', () => (running ? pause() : start()));
+  document.getElementById('timer-reset').addEventListener('click', () => { pause(); setMode(mode); });
+  document.getElementById('timer-skip').addEventListener('click', () => {
+    pause();
+    setMode(mode === 'focus' ? 'short' : 'focus');
+  });
+
+  render();
+})();
 
 // ---------- Boot: restore saved layout, else one fresh terminal ----------
 (function boot() {
