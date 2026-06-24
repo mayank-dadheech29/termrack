@@ -49,6 +49,7 @@ function buildMenu(win) {
       submenu: [
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: () => send('new') },
         { label: 'Close Terminal', accelerator: 'CmdOrCtrl+W', click: () => send('close') },
+        { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => send('reopen') },
         { type: 'separator' },
         { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send('toggle-sidebar') },
         { type: 'separator' },

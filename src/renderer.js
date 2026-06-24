@@ -8,6 +8,7 @@
 
 const tabs = new Map();   // tabId -> tab
 const panes = new Map();  // paneId -> pane
+const closedTabs = [];    // stack of recently closed tab snapshots (for ⌘⇧T)
 let activeTabId = null;
 let counter = 0;
 let fontSize = loadFontSize();
@@ -176,11 +177,17 @@ function createPane(opts) {
     if (pane.tabId) setActivePane(pane.tabId, id);
   });
 
-  // ⌘⌫ deletes the whole input line (Ctrl-E then Ctrl-U).
   term.attachCustomKeyEventHandler((e) => {
-    if (e.type === 'keydown' && e.metaKey && e.key === 'Backspace') {
+    if (e.type !== 'keydown') return true;
+    // ⌘⌫ deletes the whole input line (Ctrl-E then Ctrl-U).
+    if (e.metaKey && e.key === 'Backspace') {
       window.term.input(id, '\x05\x15');
       return false;
+    }
+    // ⌘⌥ + arrows move focus between split panes.
+    if (e.metaKey && e.altKey) {
+      const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[e.key];
+      if (dir) { focusPaneDir(dir); return false; }
     }
     return true;
   });
@@ -388,6 +395,36 @@ function setActivePane(tabId, paneId) {
   if (p) requestAnimationFrame(() => { p.fit.fit(); p.term.focus(); if (!findbar.hidden) runFind(); });
 }
 
+// Move focus to the nearest pane in a given direction within the active tab.
+function focusPaneDir(dir) {
+  const tab = tabs.get(activeTabId);
+  if (!tab) return;
+  const ids = leafIds(tab.root);
+  if (ids.length < 2) return;
+  const cur = panes.get(tab.activePaneId);
+  if (!cur) return;
+  const cr = cur.el.getBoundingClientRect();
+  const cx = cr.left + cr.width / 2;
+  const cy = cr.top + cr.height / 2;
+
+  let best = null;
+  let bestDist = Infinity;
+  for (const id of ids) {
+    if (id === cur.id) continue;
+    const r = panes.get(id).el.getBoundingClientRect();
+    const dx = (r.left + r.width / 2) - cx;
+    const dy = (r.top + r.height / 2) - cy;
+    const ok = dir === 'left' ? (dx < 0 && Math.abs(dx) >= Math.abs(dy))
+      : dir === 'right' ? (dx > 0 && Math.abs(dx) >= Math.abs(dy))
+      : dir === 'up' ? (dy < 0 && Math.abs(dy) >= Math.abs(dx))
+      : (dy > 0 && Math.abs(dy) >= Math.abs(dx));
+    if (!ok) continue;
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDist) { bestDist = dist; best = id; }
+  }
+  if (best) setActivePane(tab.id, best);
+}
+
 // ---------- Split / close panes ----------
 async function splitActive(dir) {
   const tab = tabs.get(activeTabId);
@@ -466,9 +503,20 @@ function closeActivePane() {
   if (tab) closePane(tab.activePaneId);
 }
 
+function reopenClosed() {
+  if (!closedTabs.length) return;
+  createTab(closedTabs.pop());
+  saveLayout();
+}
+
 function closeTab(id) {
   const tab = tabs.get(id);
   if (!tab) return;
+  // Snapshot for reopen (⌘⇧T). Reopens as a single pane in its last directory.
+  const ap = panes.get(tab.activePaneId);
+  closedTabs.push({ name: tab.name, custom: tab.custom, cwd: ap ? ap.cwd || '' : '' });
+  if (closedTabs.length > 10) closedTabs.shift();
+
   for (const pid of leafIds(tab.root)) {
     const p = panes.get(pid);
     if (p) { window.term.kill(pid); p.term.dispose(); panes.delete(pid); }
@@ -660,6 +708,7 @@ window.term.onMenu((action) => {
   switch (action) {
     case 'new': createTab(); saveLayout(); break;
     case 'close': closeActivePane(); break;
+    case 'reopen': reopenClosed(); break;
     case 'split-right': splitActive('row'); break;
     case 'split-down': splitActive('col'); break;
     case 'font-in': setFont(fontSize + 1); break;
