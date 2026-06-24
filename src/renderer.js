@@ -1,12 +1,14 @@
-// Globals provided by the <script> tags in index.html:
-//   Terminal                    (@xterm/xterm)
-//   FitAddon.FitAddon           (@xterm/addon-fit)
-//   WebLinksAddon.WebLinksAddon (@xterm/addon-web-links)
-//   SearchAddon.SearchAddon     (@xterm/addon-search)
-// and window.term                (the preload bridge)
+// Globals from index.html <script> tags:
+//   Terminal, FitAddon.FitAddon, WebLinksAddon.WebLinksAddon, SearchAddon.SearchAddon
+//   window.term (preload bridge)
+//
+// Model: a "tab" (sidebar entry) owns a binary tree of "panes"; each pane is a
+// real shell. Splitting divides the active pane; the tree renders to nested
+// flex containers.
 
-const sessions = new Map(); // id -> session
-let activeId = null;
+const tabs = new Map();   // tabId -> tab
+const panes = new Map();  // paneId -> pane
+let activeTabId = null;
 let counter = 0;
 let fontSize = loadFontSize();
 
@@ -45,49 +47,73 @@ const SEARCH_OPTS = {
 function uid() {
   return 's' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
 }
-
 function loadFontSize() {
   const n = parseInt(localStorage.getItem('termrack.font'), 10);
   return Number.isFinite(n) ? n : 13;
 }
 
-// --- Layout persistence: remember session names + order across restarts.
+// ---------- Tree helpers ----------
+// node: { leaf: paneId }  OR  { dir: 'row'|'col', children: [node, ...] }
+function isLeaf(node) { return node && node.leaf !== undefined; }
+function countLeaves(node) {
+  if (!node) return 0;
+  return isLeaf(node) ? 1 : node.children.reduce((n, c) => n + countLeaves(c), 0);
+}
+function leafIds(node, acc = []) {
+  if (!node) return acc;
+  if (isLeaf(node)) acc.push(node.leaf);
+  else node.children.forEach((c) => leafIds(c, acc));
+  return acc;
+}
+function firstLeafId(node) {
+  return isLeaf(node) ? node.leaf : firstLeafId(node.children[0]);
+}
+function findParent(node, paneId, parent) {
+  if (isLeaf(node)) return node.leaf === paneId ? { node, parent } : null;
+  for (const child of node.children) {
+    const r = findParent(child, paneId, node);
+    if (r) return r;
+  }
+  return null;
+}
+
+// ---------- Persistence ----------
+// Stores tab name/order + each tab's active-pane cwd. Splits are not persisted;
+// a restored tab reopens as a single pane in that directory.
 function saveLayout() {
   const arr = [...listEl.children].map((li) => {
-    const s = sessions.get(li.dataset.id);
-    return s ? { name: s.name, custom: !!s.custom, cwd: s.cwd || '' } : null;
+    const t = tabs.get(li.dataset.id);
+    if (!t) return null;
+    const ap = panes.get(t.activePaneId);
+    return { name: t.name, custom: !!t.custom, cwd: ap ? ap.cwd || '' : '' };
   }).filter(Boolean);
   localStorage.setItem(LS_LAYOUT, JSON.stringify(arr));
 }
 
-// Refresh a session's last-known working directory from the live shell.
-// Called on natural events (tab-switch, quit) — never on a timer.
-async function refreshCwd(session) {
-  if (!session || !session.alive) return;
+async function refreshCwd(pane) {
+  if (!pane || !pane.alive) return;
   try {
-    const c = await window.term.cwd(session.id);
-    if (c) session.cwd = c;
+    const c = await window.term.cwd(pane.id);
+    if (c) pane.cwd = c;
   } catch (_) { /* shell gone */ }
 }
 
-function createSession(opts) {
-  const id = uid();
-  let name;
-  let custom = false;
-  const initialCwd = (opts && opts.cwd) || '';
-  if (opts && opts.name) {
-    name = opts.name;
-    custom = !!opts.custom;
-  } else {
-    counter += 1;
-    name = `Terminal ${counter}`;
-  }
+function activePane() {
+  const t = tabs.get(activeTabId);
+  return t ? panes.get(t.activePaneId) : null;
+}
 
-  // --- terminal host element ---
-  const host = document.createElement('div');
-  host.className = 'term-host';
-  host.dataset.id = id;
-  termsEl.appendChild(host);
+// ---------- Panes ----------
+function createPane(opts) {
+  const id = uid();
+  const cwd = (opts && opts.cwd) || '';
+
+  const el = document.createElement('div');
+  el.className = 'pane';
+  el.dataset.paneId = id;
+  // Attach to the DOM before open() so xterm can measure; renderTab() re-parents
+  // it into the right place in the tab's pane tree immediately after.
+  termsEl.appendChild(el);
 
   const term = new Terminal({
     fontFamily: 'Menlo, "SF Mono", Monaco, "Courier New", monospace',
@@ -102,9 +128,83 @@ function createSession(opts) {
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon.WebLinksAddon());
   term.loadAddon(search);
-  term.open(host);
+  term.open(el);
 
-  // --- sidebar item ---
+  const pane = { id, term, fit, search, el, alive: true, cwd, tabId: null };
+  panes.set(id, pane);
+
+  // Spawn now at a default size; the first fit() emits onResize to correct it.
+  window.term.create(id, term.cols || 80, term.rows || 24, cwd);
+  term.onData((data) => window.term.input(id, data));
+  term.onResize(({ cols, rows }) => window.term.resize(id, cols, rows));
+
+  // Only the active pane is allowed to rename its tab (avoids panes fighting).
+  term.onTitleChange((title) => {
+    const tab = tabs.get(pane.tabId);
+    if (!tab || tab.custom || tab.activePaneId !== id) return;
+    if (title && title.trim()) {
+      tab.name = title.trim();
+      const n = tab.item.querySelector('.name');
+      if (n) n.textContent = tab.name;
+    }
+  });
+
+  // Copy-on-select.
+  term.onSelectionChange(() => {
+    const sel = term.getSelection();
+    if (sel && sel.length) window.term.clipboardWrite(sel);
+  });
+
+  // Right-click pastes into this pane.
+  el.addEventListener('contextmenu', async (e) => {
+    e.preventDefault();
+    const text = await window.term.clipboardRead();
+    if (text) term.paste(text);
+  });
+
+  // Clicking a pane makes it the active one.
+  el.addEventListener('mousedown', () => {
+    if (pane.tabId) setActivePane(pane.tabId, id);
+  });
+
+  // ⌘⌫ deletes the whole input line (Ctrl-E then Ctrl-U).
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type === 'keydown' && e.metaKey && e.key === 'Backspace') {
+      window.term.input(id, '\x05\x15');
+      return false;
+    }
+    return true;
+  });
+
+  // Keep the find counter live when this is the active pane.
+  search.onDidChangeResults((e) => {
+    if (activePane() !== pane || findbar.hidden) return;
+    findCount.textContent = e && e.resultCount > 0
+      ? `${(e.resultIndex ?? -1) + 1}/${e.resultCount}`
+      : 'none';
+  });
+
+  return pane;
+}
+
+// ---------- Tabs ----------
+function createTab(opts) {
+  const id = uid();
+  let name;
+  let custom = false;
+  if (opts && opts.name) {
+    name = opts.name;
+    custom = !!opts.custom;
+  } else {
+    counter += 1;
+    name = `Terminal ${counter}`;
+  }
+
+  const container = document.createElement('div');
+  container.className = 'tab-root';
+  container.dataset.id = id;
+  termsEl.appendChild(container);
+
   const item = document.createElement('li');
   item.className = 'session';
   item.dataset.id = id;
@@ -118,140 +218,196 @@ function createSession(opts) {
     <button class="close" title="Close">×</button>`;
   item.querySelector('.name').textContent = name;
 
-  // Manual double-click detection: draggable elements suppress the native
-  // dblclick event in Chromium, so we time two quick clicks on the name.
+  // Manual double-click detect (draggable elements suppress native dblclick).
   let lastNameClick = 0;
   item.addEventListener('click', (e) => {
     if (e.target.classList.contains('close')) return;
     if (e.target.classList.contains('name')) {
       const now = Date.now();
-      if (now - lastNameClick < 350) { lastNameClick = 0; beginRename(session); return; }
+      if (now - lastNameClick < 350) { lastNameClick = 0; beginRename(tab); return; }
       lastNameClick = now;
     }
-    activate(id);
+    activateTab(id);
   });
   item.querySelector('.close').addEventListener('click', (e) => {
     e.stopPropagation();
-    closeSession(id);
+    closeTab(id);
   });
   wireDrag(item);
   listEl.appendChild(item);
 
-  const session = { id, name, custom, cwd: initialCwd, term, fit, search, host, item, alive: true };
-  sessions.set(id, session);
+  const pane = createPane({ cwd: (opts && opts.cwd) || '' });
+  pane.tabId = id;
 
-  // Keep the find counter live for the active terminal.
-  search.onDidChangeResults((e) => {
-    if (activeId !== id || findbar.hidden) return;
-    findCount.textContent = e && e.resultCount > 0
-      ? `${(e.resultIndex ?? -1) + 1}/${e.resultCount}`
-      : 'none';
-  });
+  const tab = { id, name, custom, item, container, root: { leaf: pane.id }, activePaneId: pane.id };
+  tabs.set(id, tab);
 
-  // Show it first so fit() can measure real pixels, then spawn the PTY sized to fit.
-  activate(id);
-  fit.fit();
-  window.term.create(id, term.cols, term.rows, initialCwd);
-
-  term.onData((data) => window.term.input(id, data));
-  term.onResize(({ cols, rows }) => window.term.resize(id, cols, rows));
-
-  // Copy-on-select: as soon as text is highlighted, put it on the clipboard.
-  term.onSelectionChange(() => {
-    const sel = term.getSelection();
-    if (sel && sel.length) window.term.clipboardWrite(sel);
-  });
-
-  // Right-click pastes the clipboard into this terminal.
-  host.addEventListener('contextmenu', async (e) => {
-    e.preventDefault();
-    const text = await window.term.clipboardRead();
-    if (text) term.paste(text);
-  });
-
-  // ⌘⌫ deletes the whole current input line: Ctrl-E (end) then Ctrl-U (kill
-  // to start). Handled before xterm so it doesn't fall through as a backspace.
-  term.attachCustomKeyEventHandler((e) => {
-    if (e.type === 'keydown' && e.metaKey && e.key === 'Backspace') {
-      window.term.input(id, '\x05\x15');
-      return false;
-    }
-    return true;
-  });
-
-  // Programs that set the window title (\e]0;...\a) rename the tab — unless the
-  // user gave it a custom name, which always wins.
-  term.onTitleChange((title) => {
-    if (session.custom) return;
-    if (title && title.trim()) {
-      session.name = title.trim();
-      const nameEl = item.querySelector('.name');
-      if (nameEl) nameEl.textContent = session.name;
-    }
-  });
-
-  return session;
+  renderTab(tab);
+  activateTab(id);
+  return tab;
 }
 
-function activate(id) {
-  const session = sessions.get(id);
-  if (!session) return;
+function renderTab(tab) {
+  tab.container.innerHTML = '';
+  tab.container.appendChild(renderNode(tab.root));
+  tab.container.classList.toggle('split-mode', countLeaves(tab.root) > 1);
+  updatePaneHighlight(tab);
+}
 
-  // Capture the cwd of the tab we're leaving, so it persists across restarts.
-  const leaving = sessions.get(activeId);
+function renderNode(node) {
+  if (isLeaf(node)) return panes.get(node.leaf).el;
+  const div = document.createElement('div');
+  div.className = 'split ' + (node.dir === 'col' ? 'col' : 'row');
+  node.children.forEach((c) => div.appendChild(renderNode(c)));
+  return div;
+}
+
+function updatePaneHighlight(tab) {
+  for (const pid of leafIds(tab.root)) {
+    const p = panes.get(pid);
+    if (p) p.el.classList.toggle('pane-active', pid === tab.activePaneId);
+  }
+}
+
+function fitTab(tab) {
+  requestAnimationFrame(() => {
+    for (const pid of leafIds(tab.root)) {
+      const p = panes.get(pid);
+      if (p) { try { p.fit.fit(); } catch (_) {} }
+    }
+  });
+}
+
+function activateTab(id) {
+  const tab = tabs.get(id);
+  if (!tab) return;
+
+  // Capture the cwd of the pane we're leaving so it persists.
+  const leaving = tabs.get(activeTabId);
   if (leaving && leaving.id !== id) {
-    refreshCwd(leaving).then(saveLayout);
+    const lp = panes.get(leaving.activePaneId);
+    if (lp) refreshCwd(lp).then(saveLayout);
   }
 
-  activeId = id;
-
-  for (const s of sessions.values()) {
-    const on = s.id === id;
-    s.host.classList.toggle('active', on);
-    s.item.classList.toggle('active', on);
+  activeTabId = id;
+  for (const t of tabs.values()) {
+    const on = t.id === id;
+    t.container.classList.toggle('active', on);
+    t.item.classList.toggle('active', on);
   }
 
   updateEmptyState();
+  fitTab(tab);
   requestAnimationFrame(() => {
-    session.fit.fit();
-    session.term.focus();
+    const p = panes.get(tab.activePaneId);
+    if (p) p.term.focus();
     if (!findbar.hidden) runFind();
   });
 }
 
-function closeSession(id) {
-  const session = sessions.get(id);
-  if (!session) return;
+function setActivePane(tabId, paneId) {
+  const tab = tabs.get(tabId);
+  if (!tab) return;
+  activeTabId = tabId;
+  tab.activePaneId = paneId;
+  updatePaneHighlight(tab);
+  const p = panes.get(paneId);
+  if (p) requestAnimationFrame(() => { p.fit.fit(); p.term.focus(); if (!findbar.hidden) runFind(); });
+}
 
-  window.term.kill(id);
-  session.term.dispose();
-  session.host.remove();
-  session.item.remove();
-  sessions.delete(id);
+// ---------- Split / close panes ----------
+async function splitActive(dir) {
+  const tab = tabs.get(activeTabId);
+  if (!tab) return;
+  const cur = panes.get(tab.activePaneId);
+  let cwd = '';
+  if (cur) { await refreshCwd(cur); cwd = cur.cwd; }
+
+  const np = createPane({ cwd });
+  np.tabId = tab.id;
+
+  const found = findParent(tab.root, tab.activePaneId, null);
+  if (found && found.parent && found.parent.dir === dir) {
+    const idx = found.parent.children.indexOf(found.node);
+    found.parent.children.splice(idx + 1, 0, { leaf: np.id });
+  } else {
+    const newSplit = { dir, children: [{ leaf: tab.activePaneId }, { leaf: np.id }] };
+    if (found && found.parent) {
+      const idx = found.parent.children.indexOf(found.node);
+      found.parent.children[idx] = newSplit;
+    } else {
+      tab.root = newSplit;
+    }
+  }
+
+  renderTab(tab);
+  setActivePane(tab.id, np.id);
+  fitTab(tab);
+  saveLayout();
+}
+
+function closeActivePane() {
+  const tab = tabs.get(activeTabId);
+  if (!tab) return;
+  const paneId = tab.activePaneId;
+
+  if (countLeaves(tab.root) <= 1) { closeTab(tab.id); return; }
+
+  // Prune the leaf and collapse any now-single-child split.
+  const prune = (node) => {
+    if (isLeaf(node)) return node.leaf === paneId ? null : node;
+    const kids = node.children.map(prune).filter(Boolean);
+    if (kids.length === 0) return null;
+    if (kids.length === 1) return kids[0];
+    return { dir: node.dir, children: kids };
+  };
+  tab.root = prune(tab.root);
+
+  const p = panes.get(paneId);
+  if (p) { window.term.kill(paneId); p.term.dispose(); panes.delete(paneId); }
+
+  const fid = firstLeafId(tab.root);
+  tab.activePaneId = fid;
+  renderTab(tab);
+  setActivePane(tab.id, fid);
+  fitTab(tab);
+  saveLayout();
+}
+
+function closeTab(id) {
+  const tab = tabs.get(id);
+  if (!tab) return;
+  for (const pid of leafIds(tab.root)) {
+    const p = panes.get(pid);
+    if (p) { window.term.kill(pid); p.term.dispose(); panes.delete(pid); }
+  }
+  tab.container.remove();
+  tab.item.remove();
+  tabs.delete(id);
   saveLayout();
 
-  if (activeId === id) {
-    const next = [...sessions.keys()].pop();
-    activeId = null;
-    if (next) activate(next);
+  if (activeTabId === id) {
+    const next = [...tabs.keys()].pop();
+    activeTabId = null;
+    if (next) activateTab(next);
     else updateEmptyState();
   }
 }
 
 function updateEmptyState() {
-  emptyEl.style.display = sessions.size === 0 ? 'flex' : 'none';
+  emptyEl.style.display = tabs.size === 0 ? 'flex' : 'none';
 }
 
 // ---------- Rename (double-click) ----------
-function beginRename(session) {
-  const item = session.item;
+function beginRename(tab) {
+  const item = tab.item;
   const nameEl = item.querySelector('.name');
   if (!nameEl) return;
   item.draggable = false;
 
   const input = document.createElement('input');
   input.className = 'name-edit';
-  input.value = session.name;
+  input.value = tab.name;
   nameEl.replaceWith(input);
   input.focus();
   input.select();
@@ -263,16 +419,12 @@ function beginRename(session) {
     const v = input.value.trim();
     const span = document.createElement('div');
     span.className = 'name';
-    if (save && v) {
-      session.name = v;
-      session.custom = true;
-    }
-    span.textContent = session.name;
+    if (save && v) { tab.name = v; tab.custom = true; }
+    span.textContent = tab.name;
     input.replaceWith(span);
     item.draggable = true;
     if (save && v) saveLayout();
   };
-
   input.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Enter') commit(true);
@@ -281,7 +433,7 @@ function beginRename(session) {
   input.addEventListener('blur', () => commit(true));
 }
 
-// ---------- Drag to reorder ----------
+// ---------- Drag to reorder tabs ----------
 function wireDrag(item) {
   item.addEventListener('dragstart', (e) => {
     item.classList.add('dragging');
@@ -292,7 +444,6 @@ function wireDrag(item) {
     saveLayout();
   });
 }
-
 listEl.addEventListener('dragover', (e) => {
   e.preventDefault();
   const dragging = listEl.querySelector('.dragging');
@@ -301,7 +452,6 @@ listEl.addEventListener('dragover', (e) => {
   if (after == null) listEl.appendChild(dragging);
   else listEl.insertBefore(dragging, after);
 });
-
 function getDragAfterElement(y) {
   const els = [...listEl.querySelectorAll('.session:not(.dragging)')];
   let closest = { offset: -Infinity, element: null };
@@ -316,32 +466,28 @@ function getDragAfterElement(y) {
 // ---------- Font size ----------
 function setFont(n) {
   fontSize = Math.max(8, Math.min(28, n));
-  for (const s of sessions.values()) {
-    s.term.options.fontSize = fontSize;
-    s.fit.fit();
-    window.term.resize(s.id, s.term.cols, s.term.rows);
+  for (const p of panes.values()) {
+    p.term.options.fontSize = fontSize;
+    try { p.fit.fit(); } catch (_) {}
+    window.term.resize(p.id, p.term.cols, p.term.rows);
   }
   localStorage.setItem(LS_FONT, String(fontSize));
 }
 
-// ---------- Clear ----------
+// ---------- Clear / Copy / Paste / Select All (active pane) ----------
 function clearActive() {
-  const s = sessions.get(activeId);
-  if (s) s.term.clear();
+  const p = activePane();
+  if (p) p.term.clear();
 }
-
-// ---------- Copy / Paste / Select All (active terminal) ----------
-// These run from global ⌘C/⌘V/⌘A accelerators, so defer to the find input
-// when it has focus instead of acting on the terminal.
 function copyActive() {
   if (document.activeElement === findInput) {
     const t = findInput.value.substring(findInput.selectionStart, findInput.selectionEnd);
     if (t) window.term.clipboardWrite(t);
     return;
   }
-  const s = sessions.get(activeId);
-  if (!s) return;
-  const sel = s.term.getSelection();
+  const p = activePane();
+  if (!p) return;
+  const sel = p.term.getSelection();
   if (sel && sel.length) window.term.clipboardWrite(sel);
 }
 async function pasteActive() {
@@ -355,48 +501,36 @@ async function pasteActive() {
     runFind();
     return;
   }
-  const s = sessions.get(activeId);
-  if (s) s.term.paste(text);
+  const p = activePane();
+  if (p) p.term.paste(text);
 }
 function selectAllActive() {
   if (document.activeElement === findInput) { findInput.select(); return; }
-  const s = sessions.get(activeId);
-  if (s) s.term.selectAll();
+  const p = activePane();
+  if (p) p.term.selectAll();
 }
 
 // ---------- Find ----------
-function showFind() {
-  findbar.hidden = false;
-  findInput.focus();
-  findInput.select();
-  runFind();
-}
+function showFind() { findbar.hidden = false; findInput.focus(); findInput.select(); runFind(); }
 function hideFind() {
   findbar.hidden = true;
-  const s = sessions.get(activeId);
-  if (s) {
-    if (s.search.clearDecorations) s.search.clearDecorations();
-    s.term.focus();
-  }
+  const p = activePane();
+  if (p) { if (p.search.clearDecorations) p.search.clearDecorations(); p.term.focus(); }
   findCount.textContent = '';
 }
-function toggleFind() {
-  if (findbar.hidden) showFind();
-  else hideFind();
-}
+function toggleFind() { if (findbar.hidden) showFind(); else hideFind(); }
 function runFind(dir) {
-  const s = sessions.get(activeId);
-  if (!s) return;
+  const p = activePane();
+  if (!p) return;
   const q = findInput.value;
   if (!q) {
-    if (s.search.clearDecorations) s.search.clearDecorations();
+    if (p.search.clearDecorations) p.search.clearDecorations();
     findCount.textContent = '';
     return;
   }
-  if (dir === 'prev') s.search.findPrevious(q, SEARCH_OPTS);
-  else s.search.findNext(q, SEARCH_OPTS);
+  if (dir === 'prev') p.search.findPrevious(q, SEARCH_OPTS);
+  else p.search.findNext(q, SEARCH_OPTS);
 }
-
 findInput.addEventListener('input', () => runFind());
 findInput.addEventListener('keydown', (e) => {
   e.stopPropagation();
@@ -409,33 +543,33 @@ document.getElementById('find-close').addEventListener('click', hideFind);
 
 // ---------- PTY -> renderer ----------
 window.term.onData(({ id, data }) => {
-  const session = sessions.get(id);
-  if (session) session.term.write(data);
+  const p = panes.get(id);
+  if (p) p.term.write(data);
 });
-
 window.term.onExit(({ id }) => {
-  const session = sessions.get(id);
-  if (!session) return;
-  session.alive = false;
-  session.item.classList.add('dead');
-  session.term.write('\r\n\x1b[90m[process exited — ⌘W to close]\x1b[0m\r\n');
+  const p = panes.get(id);
+  if (!p) return;
+  p.alive = false;
+  p.term.write('\r\n\x1b[90m[process exited — ⌘W to close]\x1b[0m\r\n');
 });
 
-// ---------- Quit flush: capture every live tab's cwd, then persist ----------
+// ---------- Quit flush: capture every pane's cwd, then persist ----------
 window.term.onFlush(async () => {
   try {
-    await Promise.all([...sessions.values()].map(refreshCwd));
+    await Promise.all([...panes.values()].map(refreshCwd));
     saveLayout();
   } finally {
     window.term.flushed();
   }
 });
 
-// ---------- Menu actions (from main process) ----------
+// ---------- Menu actions ----------
 window.term.onMenu((action) => {
   switch (action) {
-    case 'new': createSession(); saveLayout(); break;
-    case 'close': if (activeId) closeSession(activeId); break;
+    case 'new': createTab(); saveLayout(); break;
+    case 'close': closeActivePane(); break;
+    case 'split-right': splitActive('row'); break;
+    case 'split-down': splitActive('col'); break;
     case 'font-in': setFont(fontSize + 1); break;
     case 'font-out': setFont(fontSize - 1); break;
     case 'font-reset': setFont(13); break;
@@ -450,22 +584,22 @@ window.term.onMenu((action) => {
 
 // ---------- Window + keyboard ----------
 window.addEventListener('resize', () => {
-  const session = sessions.get(activeId);
-  if (session) session.fit.fit();
+  const tab = tabs.get(activeTabId);
+  if (tab) fitTab(tab);
 });
 
 document.getElementById('new-session').addEventListener('click', () => {
-  createSession();
+  createTab();
   saveLayout();
 });
 
-// ⌘1–9 to jump to a session (the rest of the shortcuts live in the app menu).
+// ⌘1–9 jumps to a tab.
 window.addEventListener('keydown', (e) => {
   if (!e.metaKey) return;
   if (e.key >= '1' && e.key <= '9') {
     const idx = parseInt(e.key, 10) - 1;
     const ids = [...listEl.children].map((li) => li.dataset.id);
-    if (ids[idx]) { e.preventDefault(); activate(ids[idx]); }
+    if (ids[idx]) { e.preventDefault(); activateTab(ids[idx]); }
   }
 });
 
@@ -476,8 +610,8 @@ const LS_SIDEBAR_W = 'termrack.sidebarWidth';
 const LS_SIDEBAR_COLLAPSED = 'termrack.sidebarCollapsed';
 
 function fitActiveTerm() {
-  const s = sessions.get(activeId);
-  if (s) requestAnimationFrame(() => s.fit.fit());
+  const tab = tabs.get(activeTabId);
+  if (tab) fitTab(tab);
 }
 
 (function sidebar() {
@@ -515,8 +649,8 @@ function toggleSidebar() {
 }
 
 // ---------- Pomodoro timer ----------
-// Classic cycle: 25m focus, 5m short break, 15m long break after every 4th
-// focus. setInterval runs only while counting down — zero idle cost when off.
+// 25m focus, 5m short break, 15m long break after every 4th focus.
+// setInterval runs only while counting down — zero idle cost when off.
 (function timer() {
   const DURATIONS = { focus: 25 * 60, short: 5 * 60, long: 15 * 60 };
   const LABELS = { focus: 'Focus', short: 'Break', long: 'Long Break' };
@@ -540,29 +674,10 @@ function toggleSidebar() {
     root.dataset.mode = mode;
     toggleBtn.textContent = running ? '⏸' : '▶';
   }
-
-  function setMode(m) {
-    mode = m;
-    remaining = DURATIONS[m];
-    render();
-  }
-
-  function start() {
-    if (running) return;
-    running = true;
-    handle = setInterval(tick, 1000);
-    render();
-  }
-  function pause() {
-    running = false;
-    if (handle) { clearInterval(handle); handle = null; }
-    render();
-  }
-  function tick() {
-    remaining -= 1;
-    if (remaining <= 0) { phaseEnd(); return; }
-    render();
-  }
+  function setMode(m) { mode = m; remaining = DURATIONS[m]; render(); }
+  function start() { if (running) return; running = true; handle = setInterval(tick, 1000); render(); }
+  function pause() { running = false; if (handle) { clearInterval(handle); handle = null; } render(); }
+  function tick() { remaining -= 1; if (remaining <= 0) { phaseEnd(); return; } render(); }
 
   function beep() {
     try {
@@ -577,7 +692,6 @@ function toggleSidebar() {
       osc.stop(ctx.currentTime + 0.6);
     } catch (_) { /* audio unavailable */ }
   }
-
   function notify(title, body) {
     try { new Notification(title, { body, silent: false }); } catch (_) {}
   }
@@ -586,7 +700,6 @@ function toggleSidebar() {
     pause();
     root.classList.remove('done'); void root.offsetWidth; root.classList.add('done');
     beep();
-
     let next;
     if (mode === 'focus') {
       completedFocus += 1;
@@ -597,7 +710,7 @@ function toggleSidebar() {
       notify('Break over', 'Back to focus.');
     }
     setMode(next);
-    start(); // auto-start the next phase to keep the cadence going
+    start();
   }
 
   toggleBtn.addEventListener('click', () => (running ? pause() : start()));
@@ -606,7 +719,6 @@ function toggleSidebar() {
     pause();
     setMode(mode === 'focus' ? 'short' : 'focus');
   });
-
   render();
 })();
 
@@ -616,10 +728,10 @@ function toggleSidebar() {
   try { saved = JSON.parse(localStorage.getItem(LS_LAYOUT) || '[]'); } catch (_) {}
   if (Array.isArray(saved) && saved.length) {
     counter = saved.length;
-    saved.forEach((o) => createSession(o));
-    activate([...sessions.keys()][0]);
+    saved.forEach((o) => createTab(o));
+    activateTab([...tabs.keys()][0]);
   } else {
-    createSession();
+    createTab();
     saveLayout();
   }
 })();

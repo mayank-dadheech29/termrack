@@ -218,14 +218,30 @@ body {
 
 #terminals { position: absolute; inset: 0; }
 
-.term-host {
+/* A tab's pane tree fills the main area when active. */
+.tab-root {
   position: absolute;
   inset: 0;
   padding: 8px 10px;
   display: none;
 }
-.term-host.active { display: block; }
-.term-host .xterm { height: 100%; }
+.tab-root.active { display: flex; }
+.tab-root.active > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+
+.split { display: flex; flex: 1 1 0; min-width: 0; min-height: 0; gap: 6px; }
+.split.row { flex-direction: row; }
+.split.col { flex-direction: column; }
+.split > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+
+.pane {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.pane .xterm { height: 100%; }
+/* Only show the focus ring once a tab actually has more than one pane. */
+.split-mode .pane.pane-active { border-color: var(--accent); }
 
 #empty-state {
   position: absolute;
