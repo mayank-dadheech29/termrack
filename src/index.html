@@ -74,6 +74,20 @@
     </main>
   </div>
 
+  <div id="snip-overlay" hidden>
+    <div id="snip">
+      <div class="settings-title">Saved Commands</div>
+      <ul id="snip-list"></ul>
+      <div id="snip-empty" hidden>No saved commands yet — add one below.</div>
+      <div class="snip-add">
+        <input id="snip-name" type="text" placeholder="Name (e.g. Start dev server)" />
+        <input id="snip-cmd" type="text" spellcheck="false" placeholder="Command (e.g. npm run dev)" />
+        <button id="snip-add-btn" class="settings-btn">Add</button>
+      </div>
+      <div class="settings-actions"><button id="snip-done">Done</button></div>
+    </div>
+  </div>
+
   <div id="palette-overlay" hidden>
     <div id="palette">
       <input id="palette-input" type="text" placeholder="Type a command…" spellcheck="false" />

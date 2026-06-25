@@ -525,6 +525,73 @@ body {
 }
 #findbar button:hover { background: var(--accent); }
 
+/* ---------- Saved commands ---------- */
+#snip-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+#snip-overlay[hidden] { display: none; }
+#snip {
+  width: 520px;
+  max-width: 90vw;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+#snip-list { list-style: none; max-height: 44vh; overflow-y: auto; margin: 4px 0 10px; }
+#snip-empty { color: var(--text-dim); font-size: 13px; padding: 8px 2px 12px; }
+.snip-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.snip-row:hover { background: var(--item-hover); }
+.snip-meta { flex: 1; min-width: 0; }
+.snip-name { font-size: 13px; color: var(--text); }
+.snip-cmd {
+  font-family: Menlo, "SF Mono", Monaco, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.snip-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.snip-actions button {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: var(--item-active);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.snip-actions button:hover { background: var(--accent); color: #fff; }
+.snip-add { display: flex; gap: 6px; align-items: center; }
+.snip-add input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  outline: none;
+}
+.snip-add #snip-name { width: 180px; }
+.snip-add #snip-cmd { flex: 1; min-width: 0; font-family: Menlo, monospace; }
+.snip-add input:focus { border-color: var(--accent); }
+
 /* ---------- Command palette ---------- */
 #palette-overlay {
   position: fixed;

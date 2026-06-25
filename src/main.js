@@ -50,6 +50,7 @@ function buildMenu(win) {
       label: 'View',
       submenu: [
         { label: 'Command Palette…', accelerator: 'CmdOrCtrl+P', click: () => send('palette') },
+        { label: 'Saved Commands…', accelerator: 'CmdOrCtrl+Shift+K', click: () => send('snippets') },
         { type: 'separator' },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: () => send('new') },
         { label: 'Close Terminal', accelerator: 'CmdOrCtrl+W', click: () => send('close') },

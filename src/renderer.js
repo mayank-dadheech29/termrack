@@ -897,6 +897,7 @@ window.term.onMenu((action) => {
     case 'selectall': selectAllActive(); break;
     case 'toggle-sidebar': toggleSidebar(); break;
     case 'palette': palette.open(); break;
+    case 'snippets': snippets.open(); break;
   }
 });
 
@@ -985,6 +986,80 @@ function toggleSidebar() {
   fitActiveTerm();
 }
 
+// ---------- Saved commands ----------
+const snippets = (function snippetsModule() {
+  const LS = 'termrack.snippets';
+  const overlay = document.getElementById('snip-overlay');
+  const listEl2 = document.getElementById('snip-list');
+  const emptyEl2 = document.getElementById('snip-empty');
+  const nameInput = document.getElementById('snip-name');
+  const cmdInput = document.getElementById('snip-cmd');
+
+  let snips = [];
+  try { snips = JSON.parse(localStorage.getItem(LS) || '[]'); } catch (_) { snips = []; }
+  const save = () => localStorage.setItem(LS, JSON.stringify(snips));
+
+  // Run (or just insert) a command in the active terminal.
+  function run(command, execute) {
+    const p = activePane();
+    if (!p) return;
+    p.term.focus();
+    window.term.input(p.id, execute ? `${command}\r` : command);
+  }
+
+  function render() {
+    listEl2.innerHTML = '';
+    emptyEl2.hidden = snips.length > 0;
+    snips.forEach((s) => {
+      const li = document.createElement('li');
+      li.className = 'snip-row';
+      const meta = document.createElement('div');
+      meta.className = 'snip-meta';
+      const nm = document.createElement('div'); nm.className = 'snip-name'; nm.textContent = s.label;
+      const cmd = document.createElement('div'); cmd.className = 'snip-cmd'; cmd.textContent = s.command;
+      meta.append(nm, cmd);
+      const actions = document.createElement('div');
+      actions.className = 'snip-actions';
+      const runBtn = document.createElement('button'); runBtn.textContent = '▶'; runBtn.title = 'Run in active terminal';
+      const insBtn = document.createElement('button'); insBtn.textContent = '↳'; insBtn.title = 'Insert (no Enter)';
+      const delBtn = document.createElement('button'); delBtn.textContent = '×'; delBtn.title = 'Delete';
+      runBtn.addEventListener('click', () => { run(s.command, true); close(); });
+      insBtn.addEventListener('click', () => { run(s.command, false); close(); });
+      delBtn.addEventListener('click', () => { snips = snips.filter((x) => x.id !== s.id); save(); render(); });
+      actions.append(runBtn, insBtn, delBtn);
+      li.append(meta, actions);
+      listEl2.appendChild(li);
+    });
+  }
+
+  function add() {
+    const label = nameInput.value.trim();
+    const command = cmdInput.value.trim();
+    if (!command) return;
+    snips.push({ id: uid(), label: label || command, command });
+    save();
+    nameInput.value = '';
+    cmdInput.value = '';
+    render();
+    nameInput.focus();
+  }
+
+  function open() { overlay.hidden = false; render(); nameInput.focus(); }
+  function close() {
+    overlay.hidden = true;
+    const p = activePane();
+    if (p) p.term.focus();
+  }
+
+  document.getElementById('snip-add-btn').addEventListener('click', add);
+  cmdInput.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') add(); else if (e.key === 'Escape') close(); });
+  nameInput.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') cmdInput.focus(); else if (e.key === 'Escape') close(); });
+  document.getElementById('snip-done').addEventListener('click', close);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+
+  return { open, run, list: () => snips };
+})();
+
 // ---------- Command palette (⌘P) ----------
 const palette = (function paletteModule() {
   const overlay = document.getElementById('palette-overlay');
@@ -1008,9 +1083,14 @@ const palette = (function paletteModule() {
       { label: 'Decrease Font Size', hint: '⌘-', run: () => setFont(settings.fontSize - 1) },
       { label: 'Reset Font Size', hint: '⌘0', run: () => setFont(13) },
       { label: 'Open Settings', hint: '⌘,', run: () => openSettings() },
+      { label: 'Saved Commands…', hint: '⌘⇧K', run: () => snippets.open() },
     ];
     for (const key of Object.keys(THEMES)) {
       a.push({ label: `Theme: ${THEMES[key].label}`, hint: '', run: () => setTheme(key) });
+    }
+    // Run any saved command.
+    for (const s of snippets.list()) {
+      a.push({ label: `Run: ${s.label}`, hint: '▶', run: () => snippets.run(s.command, true) });
     }
     // Jump to any open tab.
     [...listEl.children].forEach((li, i) => {
