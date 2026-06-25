@@ -41,6 +41,56 @@
       <div id="empty-state">No terminals. Press <kbd>+</kbd> or <kbd>⌘T</kbd> to start one.</div>
     </main>
   </div>
+
+  <div id="settings-overlay" hidden>
+    <div id="settings">
+      <div class="settings-title">Settings</div>
+      <div class="settings-row">
+        <label for="set-accent">Accent color</label>
+        <input type="color" id="set-accent" />
+      </div>
+      <div class="settings-row">
+        <label for="set-fontfamily">Font</label>
+        <select id="set-fontfamily">
+          <option value="Menlo, monospace">Menlo</option>
+          <option value="&quot;SF Mono&quot;, monospace">SF Mono</option>
+          <option value="Monaco, monospace">Monaco</option>
+          <option value="&quot;JetBrains Mono&quot;, monospace">JetBrains Mono</option>
+          <option value="&quot;Fira Code&quot;, monospace">Fira Code</option>
+          <option value="&quot;Courier New&quot;, monospace">Courier New</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label for="set-fontsize">Font size</label>
+        <input type="number" id="set-fontsize" min="8" max="28" />
+      </div>
+      <div class="settings-row">
+        <label for="set-scrollback">Scrollback (lines)</label>
+        <input type="number" id="set-scrollback" min="100" max="100000" step="100" />
+      </div>
+      <div class="settings-row">
+        <label for="set-cursorblink">Cursor blink</label>
+        <input type="checkbox" id="set-cursorblink" />
+      </div>
+      <div class="settings-sep"></div>
+      <div class="settings-row">
+        <label for="set-tfocus">Focus minutes</label>
+        <input type="number" id="set-tfocus" min="1" max="180" />
+      </div>
+      <div class="settings-row">
+        <label for="set-tshort">Short break</label>
+        <input type="number" id="set-tshort" min="1" max="180" />
+      </div>
+      <div class="settings-row">
+        <label for="set-tlong">Long break</label>
+        <input type="number" id="set-tlong" min="1" max="180" />
+      </div>
+      <div class="settings-actions">
+        <button id="settings-done">Done</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>

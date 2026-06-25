@@ -11,7 +11,7 @@ const panes = new Map();  // paneId -> pane
 const closedStack = []; // recently closed tabs & panes, newest last (for ⌘⇧T)
 let activeTabId = null;
 let counter = 0;
-let fontSize = loadFontSize();
+let timerApplyDurations = null; // set by the timer module; lets Settings update it live
 
 const listEl = document.getElementById('session-list');
 const termsEl = document.getElementById('terminals');
@@ -21,8 +21,51 @@ const findbar = document.getElementById('findbar');
 const findInput = document.getElementById('find-input');
 const findCount = document.getElementById('find-count');
 
-const LS_FONT = 'termrack.font';
 const LS_LAYOUT = 'termrack.layout';
+
+// ---------- Settings (design tokens + terminal/timer options) ----------
+const DEFAULT_SETTINGS = {
+  accent: '#4f8cff',
+  fontFamily: 'Menlo, monospace',
+  fontSize: 13,
+  scrollback: 10000,
+  cursorBlink: true,
+  timer: { focus: 25, short: 5, long: 15 },
+};
+const settings = loadSettings();
+document.documentElement.style.setProperty('--accent', settings.accent);
+function loadSettings() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('termrack.settings') || '{}'); } catch (_) {}
+  const s = { ...DEFAULT_SETTINGS, ...saved, timer: { ...DEFAULT_SETTINGS.timer, ...(saved.timer || {}) } };
+  // One-time migration from the older standalone keys.
+  if (!localStorage.getItem('termrack.settings')) {
+    const f = parseInt(localStorage.getItem('termrack.font'), 10);
+    if (Number.isFinite(f)) s.fontSize = f;
+    try {
+      const d = JSON.parse(localStorage.getItem('termrack.timer.durations') || 'null');
+      if (d) Object.assign(s.timer, d);
+    } catch (_) {}
+  }
+  return s;
+}
+function saveSettings() { localStorage.setItem('termrack.settings', JSON.stringify(settings)); }
+function termTheme() { return { ...THEME, cursor: settings.accent }; }
+
+// Apply every setting to the live UI and all open panes.
+function applySettings() {
+  document.documentElement.style.setProperty('--accent', settings.accent);
+  for (const p of panes.values()) {
+    p.term.options.fontFamily = settings.fontFamily;
+    p.term.options.fontSize = settings.fontSize;
+    p.term.options.scrollback = settings.scrollback;
+    p.term.options.cursorBlink = settings.cursorBlink;
+    p.term.options.theme = termTheme();
+    try { p.fit.fit(); } catch (_) {}
+    window.term.resize(p.id, p.term.cols, p.term.rows);
+  }
+  if (timerApplyDurations) timerApplyDurations();
+}
 
 const THEME = {
   background: '#0d0d0f',
@@ -47,10 +90,6 @@ const SEARCH_OPTS = {
 
 function uid() {
   return 's' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
-}
-function loadFontSize() {
-  const n = parseInt(localStorage.getItem('termrack.font'), 10);
-  return Number.isFinite(n) ? n : 13;
 }
 
 // ---------- Tree helpers ----------
@@ -144,12 +183,12 @@ function createPane(opts) {
   termsEl.appendChild(el);
 
   const term = new Terminal({
-    fontFamily: 'Menlo, "SF Mono", Monaco, "Courier New", monospace',
-    fontSize: fontSize,
-    cursorBlink: true,
+    fontFamily: settings.fontFamily,
+    fontSize: settings.fontSize,
+    cursorBlink: settings.cursorBlink,
     allowProposedApi: true,
-    theme: THEME,
-    scrollback: 10000,
+    theme: termTheme(),
+    scrollback: settings.scrollback,
   });
   const fit = new FitAddon.FitAddon();
   const search = new SearchAddon.SearchAddon();
@@ -668,13 +707,13 @@ function getDragAfterElement(y) {
 
 // ---------- Font size ----------
 function setFont(n) {
-  fontSize = Math.max(8, Math.min(28, n));
+  settings.fontSize = Math.max(8, Math.min(28, n));
   for (const p of panes.values()) {
-    p.term.options.fontSize = fontSize;
+    p.term.options.fontSize = settings.fontSize;
     try { p.fit.fit(); } catch (_) {}
     window.term.resize(p.id, p.term.cols, p.term.rows);
   }
-  localStorage.setItem(LS_FONT, String(fontSize));
+  saveSettings();
 }
 
 // ---------- Clear / Copy / Paste / Select All (active pane) ----------
@@ -774,9 +813,10 @@ window.term.onMenu((action) => {
     case 'reopen': reopenClosed(); break;
     case 'split-right': splitActive('row'); break;
     case 'split-down': splitActive('col'); break;
-    case 'font-in': setFont(fontSize + 1); break;
-    case 'font-out': setFont(fontSize - 1); break;
+    case 'font-in': setFont(settings.fontSize + 1); break;
+    case 'font-out': setFont(settings.fontSize - 1); break;
     case 'font-reset': setFont(13); break;
+    case 'settings': openSettings(); break;
     case 'clear': clearActive(); break;
     case 'find': toggleFind(); break;
     case 'copy': copyActive(); break;
@@ -859,14 +899,52 @@ function toggleSidebar() {
   fitActiveTerm();
 }
 
+// ---------- Settings panel (⌘,) ----------
+const settingsOverlay = document.getElementById('settings-overlay');
+
+function openSettings() {
+  document.getElementById('set-accent').value = settings.accent;
+  document.getElementById('set-fontfamily').value = settings.fontFamily;
+  document.getElementById('set-fontsize').value = settings.fontSize;
+  document.getElementById('set-scrollback').value = settings.scrollback;
+  document.getElementById('set-cursorblink').checked = settings.cursorBlink;
+  document.getElementById('set-tfocus').value = settings.timer.focus;
+  document.getElementById('set-tshort').value = settings.timer.short;
+  document.getElementById('set-tlong').value = settings.timer.long;
+  settingsOverlay.hidden = false;
+}
+function closeSettings() {
+  settingsOverlay.hidden = true;
+  const p = activePane();
+  if (p) p.term.focus();
+}
+
+(function wireSettings() {
+  const onInput = (id, fn) => document.getElementById(id).addEventListener('input', fn);
+  const clampInt = (v, lo, hi) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+
+  onInput('set-accent', (e) => { settings.accent = e.target.value; saveSettings(); applySettings(); });
+  onInput('set-fontfamily', (e) => { settings.fontFamily = e.target.value; saveSettings(); applySettings(); });
+  onInput('set-fontsize', (e) => { const v = clampInt(e.target.value, 8, 28); if (v) { settings.fontSize = v; saveSettings(); applySettings(); } });
+  onInput('set-scrollback', (e) => { const v = clampInt(e.target.value, 100, 100000); if (v) { settings.scrollback = v; saveSettings(); applySettings(); } });
+  document.getElementById('set-cursorblink').addEventListener('change', (e) => { settings.cursorBlink = e.target.checked; saveSettings(); applySettings(); });
+  onInput('set-tfocus', (e) => { const v = clampInt(e.target.value, 1, 180); if (v) { settings.timer.focus = v; saveSettings(); if (timerApplyDurations) timerApplyDurations(); } });
+  onInput('set-tshort', (e) => { const v = clampInt(e.target.value, 1, 180); if (v) { settings.timer.short = v; saveSettings(); if (timerApplyDurations) timerApplyDurations(); } });
+  onInput('set-tlong', (e) => { const v = clampInt(e.target.value, 1, 180); if (v) { settings.timer.long = v; saveSettings(); if (timerApplyDurations) timerApplyDurations(); } });
+
+  document.getElementById('settings-done').addEventListener('click', closeSettings);
+  settingsOverlay.addEventListener('mousedown', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !settingsOverlay.hidden) { e.preventDefault(); closeSettings(); }
+  });
+})();
+
 // ---------- Pomodoro timer ----------
 // Focus / short break / long break (after every 4th focus). Durations are
 // configurable (click the time when stopped). setInterval runs only while
 // counting down — zero idle cost when off. Tracks focus sessions per day.
 (function timer() {
   const LABELS = { focus: 'Focus', short: 'Break', long: 'Long Break' };
-  const DEFAULT_MIN = { focus: 25, short: 5, long: 15 };
-  const LS_DUR = 'termrack.timer.durations';
   const LS_TODAY = 'termrack.timer.today';
 
   const root = document.getElementById('timer');
@@ -875,11 +953,8 @@ function toggleSidebar() {
   const toggleBtn = document.getElementById('timer-toggle');
   const todayEl = document.getElementById('timer-today');
 
-  // Durations (minutes), persisted.
-  const mins = { ...DEFAULT_MIN };
-  try { Object.assign(mins, JSON.parse(localStorage.getItem(LS_DUR) || '{}')); } catch (_) {}
-  const dur = (m) => mins[m] * 60;
-  const saveDur = () => localStorage.setItem(LS_DUR, JSON.stringify(mins));
+  // Durations come from Settings (minutes).
+  const dur = (m) => settings.timer[m] * 60;
 
   // "Completed focus sessions today", reset when the date rolls over.
   function todayKey() {
@@ -963,7 +1038,7 @@ function toggleSidebar() {
     input.type = 'text';
     input.inputMode = 'numeric';
     input.maxLength = 3;
-    input.value = String(mins[mode]);
+    input.value = String(settings.timer[mode]);
     input.setAttribute('aria-label', 'Minutes');
     // Only allow digits as the user types.
     input.addEventListener('input', () => {
@@ -980,8 +1055,8 @@ function toggleSidebar() {
       done = true;
       const v = parseInt(input.value, 10);
       if (save && Number.isFinite(v) && v >= 1 && v <= 180) {
-        mins[mode] = v;
-        saveDur();
+        settings.timer[mode] = v;
+        saveSettings();
         remaining = dur(mode);
       }
       displayEl.classList.remove('editing');
@@ -1002,6 +1077,10 @@ function toggleSidebar() {
     setMode(mode === 'focus' ? 'short' : 'focus');
   });
   displayEl.addEventListener('click', editDuration);
+
+  // Let Settings update durations live (only resets the clock when stopped).
+  timerApplyDurations = () => { if (!running) { remaining = dur(mode); render(); } };
+
   render();
 })();
 

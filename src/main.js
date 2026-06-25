@@ -38,6 +38,8 @@ function buildMenu(win) {
     {
       label: 'Edit',
       submenu: [
+        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => send('settings') },
+        { type: 'separator' },
         { label: 'Copy', accelerator: 'CmdOrCtrl+C', click: () => send('copy') },
         { label: 'Paste', accelerator: 'CmdOrCtrl+V', click: () => send('paste') },
         { type: 'separator' },
