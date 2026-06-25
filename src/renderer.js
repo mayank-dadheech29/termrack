@@ -889,6 +889,7 @@ window.term.onMenu((action) => {
     case 'paste': pasteActive(); break;
     case 'selectall': selectAllActive(); break;
     case 'toggle-sidebar': toggleSidebar(); break;
+    case 'palette': palette.open(); break;
   }
 });
 
@@ -976,6 +977,106 @@ function toggleSidebar() {
   localStorage.setItem(LS_SIDEBAR_COLLAPSED, collapsed ? '1' : '0');
   fitActiveTerm();
 }
+
+// ---------- Command palette (⌘P) ----------
+const palette = (function paletteModule() {
+  const overlay = document.getElementById('palette-overlay');
+  const input = document.getElementById('palette-input');
+  const list = document.getElementById('palette-list');
+  let items = [];
+  let filtered = [];
+  let sel = 0;
+
+  function actions() {
+    const a = [
+      { label: 'New Terminal', hint: '⌘T', run: () => { createTab(); saveLayout(); } },
+      { label: 'Close Pane', hint: '⌘W', run: () => closeActivePane() },
+      { label: 'Reopen Closed Tab / Pane', hint: '⌘⇧T', run: () => reopenClosed() },
+      { label: 'Split Right', hint: '⌘D', run: () => splitActive('row') },
+      { label: 'Split Down', hint: '⌘⇧D', run: () => splitActive('col') },
+      { label: 'Toggle Sidebar', hint: '⌘B', run: () => toggleSidebar() },
+      { label: 'Find', hint: '⌘F', run: () => toggleFind() },
+      { label: 'Clear Terminal', hint: '⌘K', run: () => clearActive() },
+      { label: 'Increase Font Size', hint: '⌘+', run: () => setFont(settings.fontSize + 1) },
+      { label: 'Decrease Font Size', hint: '⌘-', run: () => setFont(settings.fontSize - 1) },
+      { label: 'Reset Font Size', hint: '⌘0', run: () => setFont(13) },
+      { label: 'Open Settings', hint: '⌘,', run: () => openSettings() },
+    ];
+    for (const key of Object.keys(THEMES)) {
+      a.push({ label: `Theme: ${THEMES[key].label}`, hint: '', run: () => setTheme(key) });
+    }
+    // Jump to any open tab.
+    [...listEl.children].forEach((li, i) => {
+      const t = tabs.get(li.dataset.id);
+      if (t) a.push({ label: `Go to: ${t.name}`, hint: i < 9 ? `⌘${i + 1}` : '', run: () => activateTab(t.id) });
+    });
+    return a;
+  }
+
+  function render() {
+    list.innerHTML = '';
+    if (!filtered.length) {
+      const li = document.createElement('li');
+      li.id = 'palette-empty';
+      li.textContent = 'No matching command';
+      list.appendChild(li);
+      return;
+    }
+    filtered.forEach((it, i) => {
+      const li = document.createElement('li');
+      if (i === sel) li.className = 'sel';
+      const label = document.createElement('span');
+      label.textContent = it.label;
+      const hint = document.createElement('span');
+      hint.className = 'hint';
+      hint.textContent = it.hint || '';
+      li.append(label, hint);
+      li.addEventListener('mousedown', (e) => { e.preventDefault(); run(it); });
+      li.addEventListener('mousemove', () => { sel = i; paint(); });
+      list.appendChild(li);
+    });
+  }
+  function paint() {
+    [...list.children].forEach((li, i) => li.classList.toggle('sel', i === sel));
+  }
+  function applyFilter() {
+    const q = input.value.trim().toLowerCase();
+    filtered = q ? items.filter((it) => it.label.toLowerCase().includes(q)) : items.slice();
+    sel = 0;
+    render();
+  }
+  function run(it) { close(); if (it && it.run) it.run(); }
+  function open() {
+    items = actions();
+    input.value = '';
+    filtered = items.slice();
+    sel = 0;
+    overlay.hidden = false;
+    render();
+    input.focus();
+  }
+  function close() {
+    overlay.hidden = true;
+    const p = activePane();
+    if (p) p.term.focus();
+  }
+
+  input.addEventListener('input', applyFilter);
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, filtered.length - 1); paint(); ensureVisible(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); paint(); ensureVisible(); }
+    else if (e.key === 'Enter') { e.preventDefault(); run(filtered[sel]); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  function ensureVisible() {
+    const li = list.children[sel];
+    if (li && li.scrollIntoView) li.scrollIntoView({ block: 'nearest' });
+  }
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+
+  return { open, close };
+})();
 
 // ---------- Settings panel (⌘,) ----------
 const settingsOverlay = document.getElementById('settings-overlay');

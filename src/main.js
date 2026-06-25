@@ -49,6 +49,8 @@ function buildMenu(win) {
     {
       label: 'View',
       submenu: [
+        { label: 'Command Palette…', accelerator: 'CmdOrCtrl+P', click: () => send('palette') },
+        { type: 'separator' },
         { label: 'New Terminal', accelerator: 'CmdOrCtrl+T', click: () => send('new') },
         { label: 'Close Terminal', accelerator: 'CmdOrCtrl+W', click: () => send('close') },
         { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => send('reopen') },
