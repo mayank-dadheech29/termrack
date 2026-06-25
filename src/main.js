@@ -226,6 +226,7 @@ ipcMain.on('yt:open', (_evt, url) => {
     y: pos.y,
     frame: false,
     resizable: true,
+    fullscreenable: false,
     minWidth: 280,
     minHeight: 160,
     roundedCorners: true,
@@ -234,6 +235,24 @@ ipcMain.on('yt:open', (_evt, url) => {
     webPreferences: { sandbox: true },
   });
   ytWin.loadURL(url);
+
+  // Block fullscreen: a frameless CHILD window going fullscreen moves to its own
+  // macOS Space, orphaning the parent terminal (black screen / crash). Neuter the
+  // page's fullscreen API and bounce out if it ever slips through.
+  ytWin.webContents.on('dom-ready', () => {
+    ytWin.webContents.executeJavaScript(
+      "(()=>{try{const noop=function(){return Promise.reject(new Error('fs off'));};"
+      + "Element.prototype.requestFullscreen=noop;"
+      + "if(Element.prototype.webkitRequestFullscreen)Element.prototype.webkitRequestFullscreen=function(){};"
+      + "if(Element.prototype.webkitRequestFullScreen)Element.prototype.webkitRequestFullScreen=function(){};"
+      + "}catch(e){}})()",
+    ).catch(() => {});
+  });
+  ytWin.webContents.on('enter-html-full-screen', () => {
+    try { ytWin.setFullScreen(false); } catch (_) {}
+    ytWin.webContents.executeJavaScript('document.exitFullscreen && document.exitFullscreen()').catch(() => {});
+  });
+
   // Keep it pinned to the corner even after the user resizes it.
   ytWin.on('resize', () => { if (mainWindow && !mainWindow.isDestroyed()) followYt(); });
   ytWin.on('closed', () => {
