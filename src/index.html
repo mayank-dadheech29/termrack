@@ -37,6 +37,7 @@
               <input id="music-input" type="text" spellcheck="false"
                      placeholder="Audio file or URL (incl. YouTube)" />
               <button id="music-pick" title="Choose audio file">📁</button>
+              <button id="music-lib" title="Saved tracks">≡</button>
             </div>
             <div class="music-bottom">
               <input id="music-vol" type="range" min="0" max="100" />
@@ -72,6 +73,21 @@
       <div id="terminals"></div>
       <div id="empty-state">No terminals. Press <kbd>+</kbd> or <kbd>⌘T</kbd> to start one.</div>
     </main>
+  </div>
+
+  <div id="tracks-overlay" hidden>
+    <div id="tracks">
+      <div class="settings-title">Saved Tracks</div>
+      <ul id="tracks-list"></ul>
+      <div id="tracks-empty" hidden>No saved tracks — add one below.</div>
+      <div class="snip-add">
+        <input id="track-name" type="text" placeholder="Name (e.g. Lofi beats)" />
+        <input id="track-url" type="text" spellcheck="false" placeholder="YouTube / audio URL or file path" />
+        <button id="track-cur" class="settings-btn" title="Use the source currently in the player">Current</button>
+        <button id="track-add-btn" class="settings-btn">Add</button>
+      </div>
+      <div class="settings-actions"><button id="tracks-done">Done</button></div>
+    </div>
   </div>
 
   <div id="snip-overlay" hidden>

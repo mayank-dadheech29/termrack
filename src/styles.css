@@ -217,7 +217,7 @@ body {
   -webkit-app-region: no-drag;
 }
 .music-top { display: flex; align-items: center; gap: 6px; }
-#music-toggle, #music-pick {
+#music-toggle, #music-pick, #music-lib {
   width: 26px;
   height: 26px;
   flex-shrink: 0;
@@ -229,7 +229,7 @@ body {
   font-size: 13px;
   line-height: 1;
 }
-#music-toggle:hover, #music-pick:hover { background: var(--accent); }
+#music-toggle:hover, #music-pick:hover, #music-lib:hover { background: var(--accent); }
 #music-input {
   flex: 1;
   min-width: 0;
@@ -525,8 +525,8 @@ body {
 }
 #findbar button:hover { background: var(--accent); }
 
-/* ---------- Saved commands ---------- */
-#snip-overlay {
+/* ---------- Saved commands / tracks ---------- */
+#snip-overlay, #tracks-overlay {
   position: fixed;
   inset: 0;
   z-index: 110;
@@ -535,8 +535,8 @@ body {
   justify-content: center;
   background: rgba(0, 0, 0, 0.5);
 }
-#snip-overlay[hidden] { display: none; }
-#snip {
+#snip-overlay[hidden], #tracks-overlay[hidden] { display: none; }
+#snip, #tracks {
   width: 520px;
   max-width: 90vw;
   background: var(--sidebar-bg);
@@ -545,8 +545,8 @@ body {
   padding: 18px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
-#snip-list { list-style: none; max-height: 44vh; overflow-y: auto; margin: 4px 0 10px; }
-#snip-empty { color: var(--text-dim); font-size: 13px; padding: 8px 2px 12px; }
+#snip-list, #tracks-list { list-style: none; max-height: 44vh; overflow-y: auto; margin: 4px 0 10px; }
+#snip-empty, #tracks-empty { color: var(--text-dim); font-size: 13px; padding: 8px 2px 12px; }
 .snip-row {
   display: flex;
   align-items: center;

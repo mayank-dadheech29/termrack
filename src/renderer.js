@@ -12,6 +12,7 @@ const closedStack = []; // recently closed tabs & panes, newest last (for ⌘⇧
 let activeTabId = null;
 let counter = 0;
 let timerApplyDurations = null; // set by the timer module; lets Settings update it live
+let musicAPI = null; // set by the music module; lets the track library drive it
 
 const listEl = document.getElementById('session-list');
 const termsEl = document.getElementById('terminals');
@@ -1084,7 +1085,11 @@ const palette = (function paletteModule() {
       { label: 'Reset Font Size', hint: '⌘0', run: () => setFont(13) },
       { label: 'Open Settings', hint: '⌘,', run: () => openSettings() },
       { label: 'Saved Commands…', hint: '⌘⇧K', run: () => snippets.open() },
+      { label: 'Music Library…', hint: '', run: () => tracks.open() },
     ];
+    for (const t of tracks.list()) {
+      a.push({ label: `Play: ${t.label}`, hint: '♪', run: () => tracks.play(t.src) });
+    }
     for (const key of Object.keys(THEMES)) {
       a.push({ label: `Theme: ${THEMES[key].label}`, hint: '', run: () => setTheme(key) });
     }
@@ -1506,6 +1511,81 @@ const ytdock = {
 
   // If the user closes the popout window, reflect that in the UI.
   window.term.onYtClosed(() => { if (ytActive) { ytActive = false; ytMinimized = false; playing = false; setBtn(); } });
+
+  // Library button opens the saved-tracks list.
+  const libBtn = document.getElementById('music-lib');
+  if (libBtn) libBtn.addEventListener('click', () => tracks.open());
+
+  // Expose a small API so the saved-tracks library can load + play a source.
+  musicAPI = {
+    playSource(src) { input.value = src; save(); if (playing) pause(); play(); },
+    current: () => input.value.trim(),
+  };
+})();
+
+// ---------- Saved tracks (music library) ----------
+const tracks = (function tracksModule() {
+  const LS = 'termrack.tracks';
+  const overlay = document.getElementById('tracks-overlay');
+  const listEl3 = document.getElementById('tracks-list');
+  const emptyEl3 = document.getElementById('tracks-empty');
+  const nameInput = document.getElementById('track-name');
+  const urlInput = document.getElementById('track-url');
+
+  let items = [];
+  try { items = JSON.parse(localStorage.getItem(LS) || '[]'); } catch (_) { items = []; }
+  const save = () => localStorage.setItem(LS, JSON.stringify(items));
+
+  function play(src) { if (musicAPI) musicAPI.playSource(src); }
+
+  function render() {
+    listEl3.innerHTML = '';
+    emptyEl3.hidden = items.length > 0;
+    items.forEach((t) => {
+      const li = document.createElement('li');
+      li.className = 'snip-row';
+      const meta = document.createElement('div');
+      meta.className = 'snip-meta';
+      const nm = document.createElement('div'); nm.className = 'snip-name'; nm.textContent = t.label;
+      const url = document.createElement('div'); url.className = 'snip-cmd'; url.textContent = t.src;
+      meta.append(nm, url);
+      const actions = document.createElement('div');
+      actions.className = 'snip-actions';
+      const playBtn = document.createElement('button'); playBtn.textContent = '▶'; playBtn.title = 'Play';
+      const delBtn = document.createElement('button'); delBtn.textContent = '×'; delBtn.title = 'Delete';
+      playBtn.addEventListener('click', () => { play(t.src); close(); });
+      delBtn.addEventListener('click', () => { items = items.filter((x) => x.id !== t.id); save(); render(); });
+      actions.append(playBtn, delBtn);
+      li.append(meta, actions);
+      listEl3.appendChild(li);
+    });
+  }
+
+  function add() {
+    const src = urlInput.value.trim();
+    if (!src) return;
+    const label = nameInput.value.trim() || src;
+    items.push({ id: uid(), label, src });
+    save();
+    nameInput.value = '';
+    urlInput.value = '';
+    render();
+    nameInput.focus();
+  }
+
+  function open() { overlay.hidden = false; render(); nameInput.focus(); }
+  function close() { overlay.hidden = true; const p = activePane(); if (p) p.term.focus(); }
+
+  document.getElementById('track-add-btn').addEventListener('click', add);
+  document.getElementById('track-cur').addEventListener('click', () => {
+    if (musicAPI) { urlInput.value = musicAPI.current(); nameInput.focus(); }
+  });
+  urlInput.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') add(); else if (e.key === 'Escape') close(); });
+  nameInput.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') urlInput.focus(); else if (e.key === 'Escape') close(); });
+  document.getElementById('tracks-done').addEventListener('click', close);
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+
+  return { open, play, list: () => items };
 })();
 
 // ---------- Boot: restore saved layout, else one fresh terminal ----------
