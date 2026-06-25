@@ -78,15 +78,42 @@ function findParent(node, paneId, parent) {
   return null;
 }
 
+// Serialize a live pane tree to a plain snapshot (leaves carry their cwd).
+function serializeNode(node) {
+  if (isLeaf(node)) {
+    const p = panes.get(node.leaf);
+    return { type: 'leaf', cwd: p ? p.cwd || '' : '' };
+  }
+  return {
+    type: 'split',
+    dir: node.dir,
+    sizes: (node.sizes || node.children.map(() => 1)).slice(),
+    children: node.children.map(serializeNode),
+  };
+}
+
+// Rebuild a live pane tree from a snapshot, spawning a pane per leaf.
+function buildNode(snap, tabId) {
+  if (!snap || !snap.children) {
+    const p = createPane({ cwd: snap ? snap.cwd || '' : '' });
+    p.tabId = tabId;
+    return { leaf: p.id };
+  }
+  return {
+    dir: snap.dir === 'col' ? 'col' : 'row',
+    sizes: Array.isArray(snap.sizes) ? snap.sizes.slice() : undefined,
+    children: snap.children.map((c) => buildNode(c, tabId)),
+  };
+}
+
 // ---------- Persistence ----------
-// Stores tab name/order + each tab's active-pane cwd. Splits are not persisted;
-// a restored tab reopens as a single pane in that directory.
+// Stores tab name/order + each tab's full pane tree (directions, sizes, and
+// per-pane cwd). cwds are refreshed on tab-switch and at quit.
 function saveLayout() {
   const arr = [...listEl.children].map((li) => {
     const t = tabs.get(li.dataset.id);
     if (!t) return null;
-    const ap = panes.get(t.activePaneId);
-    return { name: t.name, custom: !!t.custom, cwd: ap ? ap.cwd || '' : '' };
+    return { name: t.name, custom: !!t.custom, tree: serializeNode(t.root) };
   }).filter(Boolean);
   localStorage.setItem(LS_LAYOUT, JSON.stringify(arr));
 }
@@ -252,10 +279,17 @@ function createTab(opts) {
   wireDrag(item);
   listEl.appendChild(item);
 
-  const pane = createPane({ cwd: (opts && opts.cwd) || '' });
-  pane.tabId = id;
+  // Build the pane tree: from a saved tree if present, else a single pane.
+  let root;
+  if (opts && opts.tree) {
+    root = buildNode(opts.tree, id);
+  } else {
+    const pane = createPane({ cwd: (opts && opts.cwd) || '' });
+    pane.tabId = id;
+    root = { leaf: pane.id };
+  }
 
-  const tab = { id, name, custom, item, container, root: { leaf: pane.id }, activePaneId: pane.id };
+  const tab = { id, name, custom, item, container, root, activePaneId: firstLeafId(root) };
   tabs.set(id, tab);
 
   renderTab(tab);
@@ -512,9 +546,8 @@ function reopenClosed() {
 function closeTab(id) {
   const tab = tabs.get(id);
   if (!tab) return;
-  // Snapshot for reopen (⌘⇧T). Reopens as a single pane in its last directory.
-  const ap = panes.get(tab.activePaneId);
-  closedTabs.push({ name: tab.name, custom: tab.custom, cwd: ap ? ap.cwd || '' : '' });
+  // Snapshot for reopen (⌘⇧T) — full pane tree, captured before panes die.
+  closedTabs.push({ name: tab.name, custom: tab.custom, tree: serializeNode(tab.root) });
   if (closedTabs.length > 10) closedTabs.shift();
 
   for (const pid of leafIds(tab.root)) {

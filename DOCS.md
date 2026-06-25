@@ -112,12 +112,13 @@ All of these are also available in the menu bar (Edit / View).
 
 ## What persists across restarts
 
-**Saved:** tab names, tab order, each tab's working directory, font size,
-sidebar width, sidebar collapsed state, timer durations, today's focus count.
+**Saved:** tab names, tab order, each tab's **full split-pane layout**
+(directions, sizes, and per-pane working directory), font size, sidebar width,
+sidebar collapsed state, timer durations, today's focus count. `⌘⇧T` also
+restores a closed tab's full split layout.
 
-**Not saved (yet):** split-pane layouts (a restored tab reopens as a single
-pane), scrollback contents, and running programs (a shell's directory is
-restored, but not the process that was running in it).
+**Not saved (yet):** scrollback contents, and running programs (a shell's
+directory is restored, but not the process that was running in it).
 
 ---
 
@@ -125,7 +126,6 @@ restored, but not the process that was running in it).
 
 Planned, roughly in priority order:
 
-- **Persist split layouts** across restart (full pane tree + sizes + per-pane cwd).
 - **Settings window** — font family, theme, default shell, timer defaults, and a
   consolidated set of design tokens (colors / spacing / radii) to tune the look.
 - **Profiles** — launch different shells or pre-set commands per tab
