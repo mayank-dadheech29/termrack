@@ -25,6 +25,7 @@ const LS_LAYOUT = 'termrack.layout';
 
 // ---------- Settings (design tokens + terminal/timer options) ----------
 const DEFAULT_SETTINGS = {
+  theme: 'dark',
   accent: '#4f8cff',
   fontFamily: 'Menlo, monospace',
   fontSize: 13,
@@ -33,7 +34,6 @@ const DEFAULT_SETTINGS = {
   timer: { focus: 25, short: 5, long: 15 },
 };
 const settings = loadSettings();
-document.documentElement.style.setProperty('--accent', settings.accent);
 function loadSettings() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem('termrack.settings') || '{}'); } catch (_) {}
@@ -50,11 +50,79 @@ function loadSettings() {
   return s;
 }
 function saveSettings() { localStorage.setItem('termrack.settings', JSON.stringify(settings)); }
-function termTheme() { return { ...THEME, cursor: settings.accent }; }
+
+// ---------- Themes ----------
+// Each theme provides UI design tokens (CSS vars) + an xterm color set.
+// The user's accent color is applied on top of whichever theme is active.
+const THEMES = {
+  dark: {
+    label: 'Dark',
+    tokens: { '--bg': '#0d0d0f', '--sidebar-bg': '#161619', '--sidebar-border': '#26262b', '--item-hover': '#1f1f24', '--item-active': '#2b2b33', '--text': '#e6e6e9', '--text-dim': '#8a8a93' },
+    xterm: {
+      background: '#0d0d0f', foreground: '#e6e6e9', selectionBackground: '#33405e',
+      black: '#1c1c20', red: '#ff5f57', green: '#3ecf6b', yellow: '#f5c451',
+      blue: '#4f8cff', magenta: '#c678dd', cyan: '#56b6c2', white: '#dcdce0',
+      brightBlack: '#5c5c66', brightRed: '#ff7b72', brightGreen: '#7ee787',
+      brightYellow: '#ffd866', brightBlue: '#79b8ff', brightMagenta: '#d2a8ff',
+      brightCyan: '#76e3ea', brightWhite: '#ffffff',
+    },
+  },
+  light: {
+    label: 'Light',
+    tokens: { '--bg': '#ffffff', '--sidebar-bg': '#f3f3f5', '--sidebar-border': '#e0e0e4', '--item-hover': '#ececef', '--item-active': '#e2e2e8', '--text': '#1c1c20', '--text-dim': '#6b6b73' },
+    xterm: {
+      background: '#ffffff', foreground: '#24292e', selectionBackground: '#b3d4fc',
+      black: '#24292e', red: '#d73a49', green: '#22863a', yellow: '#b08800',
+      blue: '#0366d6', magenta: '#6f42c1', cyan: '#1b7c83', white: '#6a737d',
+      brightBlack: '#959da5', brightRed: '#cb2431', brightGreen: '#28a745',
+      brightYellow: '#dbab09', brightBlue: '#2188ff', brightMagenta: '#8a63d2',
+      brightCyan: '#3192aa', brightWhite: '#24292e',
+    },
+  },
+  midnight: {
+    label: 'Midnight',
+    tokens: { '--bg': '#0a0e1a', '--sidebar-bg': '#0f1422', '--sidebar-border': '#1c2333', '--item-hover': '#161d2e', '--item-active': '#1e2740', '--text': '#dfe6f3', '--text-dim': '#7e89a3' },
+    xterm: {
+      background: '#0a0e1a', foreground: '#dfe6f3', selectionBackground: '#25406b',
+      black: '#1c2333', red: '#ff6b81', green: '#5ad6a0', yellow: '#f5cd6b',
+      blue: '#6aa8ff', magenta: '#c891ff', cyan: '#5ec8d8', white: '#dfe6f3',
+      brightBlack: '#46506b', brightRed: '#ff8a9b', brightGreen: '#86e8bf',
+      brightYellow: '#ffdf94', brightBlue: '#9cc4ff', brightMagenta: '#dcb3ff',
+      brightCyan: '#8fe0ec', brightWhite: '#ffffff',
+    },
+  },
+  solarized: {
+    label: 'Solarized',
+    tokens: { '--bg': '#002b36', '--sidebar-bg': '#073642', '--sidebar-border': '#0d4451', '--item-hover': '#083d49', '--item-active': '#0a4a59', '--text': '#93a1a1', '--text-dim': '#586e75' },
+    xterm: {
+      background: '#002b36', foreground: '#93a1a1', selectionBackground: '#274642',
+      black: '#073642', red: '#dc322f', green: '#859900', yellow: '#b58900',
+      blue: '#268bd2', magenta: '#d33682', cyan: '#2aa198', white: '#eee8d5',
+      brightBlack: '#586e75', brightRed: '#cb4b16', brightGreen: '#93a1a1',
+      brightYellow: '#657b83', brightBlue: '#839496', brightMagenta: '#6c71c4',
+      brightCyan: '#94a1a1', brightWhite: '#fdf6e3',
+    },
+  },
+};
+function activeTheme() { return THEMES[settings.theme] || THEMES.dark; }
+function termTheme() { return { ...activeTheme().xterm, cursor: settings.accent, cursorAccent: activeTheme().xterm.background }; }
+
+// Apply design tokens (CSS vars) + accent to the document.
+function applyTheme() {
+  const t = activeTheme();
+  for (const [k, v] of Object.entries(t.tokens)) document.documentElement.style.setProperty(k, v);
+  document.documentElement.style.setProperty('--accent', settings.accent);
+}
+function setTheme(name) {
+  if (!THEMES[name]) return;
+  settings.theme = name;
+  saveSettings();
+  applySettings();
+}
 
 // Apply every setting to the live UI and all open panes.
 function applySettings() {
-  document.documentElement.style.setProperty('--accent', settings.accent);
+  applyTheme();
   for (const p of panes.values()) {
     p.term.options.fontFamily = settings.fontFamily;
     p.term.options.fontSize = settings.fontSize;
@@ -66,18 +134,7 @@ function applySettings() {
   }
   if (timerApplyDurations) timerApplyDurations();
 }
-
-const THEME = {
-  background: '#0d0d0f',
-  foreground: '#e6e6e9',
-  cursor: '#4f8cff',
-  selectionBackground: '#33405e',
-  black: '#1c1c20', red: '#ff5f57', green: '#3ecf6b', yellow: '#f5c451',
-  blue: '#4f8cff', magenta: '#c678dd', cyan: '#56b6c2', white: '#dcdce0',
-  brightBlack: '#5c5c66', brightRed: '#ff7b72', brightGreen: '#7ee787',
-  brightYellow: '#ffd866', brightBlue: '#79b8ff', brightMagenta: '#d2a8ff',
-  brightCyan: '#76e3ea', brightWhite: '#ffffff',
-};
+applyTheme(); // set CSS vars at startup (before panes exist)
 
 const SEARCH_OPTS = {
   decorations: {
@@ -924,6 +981,7 @@ function toggleSidebar() {
 const settingsOverlay = document.getElementById('settings-overlay');
 
 function openSettings() {
+  document.getElementById('set-theme').value = settings.theme;
   document.getElementById('set-accent').value = settings.accent;
   document.getElementById('set-fontfamily').value = settings.fontFamily;
   document.getElementById('set-fontsize').value = settings.fontSize;
@@ -944,6 +1002,7 @@ function closeSettings() {
   const onInput = (id, fn) => document.getElementById(id).addEventListener('input', fn);
   const clampInt = (v, lo, hi) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
 
+  document.getElementById('set-theme').addEventListener('change', (e) => setTheme(e.target.value));
   onInput('set-accent', (e) => { settings.accent = e.target.value; saveSettings(); applySettings(); });
   onInput('set-fontfamily', (e) => { settings.fontFamily = e.target.value; saveSettings(); applySettings(); });
   onInput('set-fontsize', (e) => { const v = clampInt(e.target.value, 8, 28); if (v) { settings.fontSize = v; saveSettings(); applySettings(); } });
