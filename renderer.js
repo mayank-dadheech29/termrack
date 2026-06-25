@@ -8,10 +8,9 @@
 
 const tabs = new Map();   // tabId -> tab
 const panes = new Map();  // paneId -> pane
-const closedStack = []; // recently closed tabs & panes, newest last (for ⌘⇧T)
 let activeTabId = null;
 let counter = 0;
-let timerApplyDurations = null; // set by the timer module; lets Settings update it live
+let fontSize = loadFontSize();
 
 const listEl = document.getElementById('session-list');
 const termsEl = document.getElementById('terminals');
@@ -21,51 +20,8 @@ const findbar = document.getElementById('findbar');
 const findInput = document.getElementById('find-input');
 const findCount = document.getElementById('find-count');
 
+const LS_FONT = 'termrack.font';
 const LS_LAYOUT = 'termrack.layout';
-
-// ---------- Settings (design tokens + terminal/timer options) ----------
-const DEFAULT_SETTINGS = {
-  accent: '#4f8cff',
-  fontFamily: 'Menlo, monospace',
-  fontSize: 13,
-  scrollback: 10000,
-  cursorBlink: true,
-  timer: { focus: 25, short: 5, long: 15 },
-};
-const settings = loadSettings();
-document.documentElement.style.setProperty('--accent', settings.accent);
-function loadSettings() {
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem('termrack.settings') || '{}'); } catch (_) {}
-  const s = { ...DEFAULT_SETTINGS, ...saved, timer: { ...DEFAULT_SETTINGS.timer, ...(saved.timer || {}) } };
-  // One-time migration from the older standalone keys.
-  if (!localStorage.getItem('termrack.settings')) {
-    const f = parseInt(localStorage.getItem('termrack.font'), 10);
-    if (Number.isFinite(f)) s.fontSize = f;
-    try {
-      const d = JSON.parse(localStorage.getItem('termrack.timer.durations') || 'null');
-      if (d) Object.assign(s.timer, d);
-    } catch (_) {}
-  }
-  return s;
-}
-function saveSettings() { localStorage.setItem('termrack.settings', JSON.stringify(settings)); }
-function termTheme() { return { ...THEME, cursor: settings.accent }; }
-
-// Apply every setting to the live UI and all open panes.
-function applySettings() {
-  document.documentElement.style.setProperty('--accent', settings.accent);
-  for (const p of panes.values()) {
-    p.term.options.fontFamily = settings.fontFamily;
-    p.term.options.fontSize = settings.fontSize;
-    p.term.options.scrollback = settings.scrollback;
-    p.term.options.cursorBlink = settings.cursorBlink;
-    p.term.options.theme = termTheme();
-    try { p.fit.fit(); } catch (_) {}
-    window.term.resize(p.id, p.term.cols, p.term.rows);
-  }
-  if (timerApplyDurations) timerApplyDurations();
-}
 
 const THEME = {
   background: '#0d0d0f',
@@ -90,6 +46,10 @@ const SEARCH_OPTS = {
 
 function uid() {
   return 's' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+}
+function loadFontSize() {
+  const n = parseInt(localStorage.getItem('termrack.font'), 10);
+  return Number.isFinite(n) ? n : 13;
 }
 
 // ---------- Tree helpers ----------
@@ -117,42 +77,15 @@ function findParent(node, paneId, parent) {
   return null;
 }
 
-// Serialize a live pane tree to a plain snapshot (leaves carry their cwd).
-function serializeNode(node) {
-  if (isLeaf(node)) {
-    const p = panes.get(node.leaf);
-    return { type: 'leaf', cwd: p ? p.cwd || '' : '' };
-  }
-  return {
-    type: 'split',
-    dir: node.dir,
-    sizes: (node.sizes || node.children.map(() => 1)).slice(),
-    children: node.children.map(serializeNode),
-  };
-}
-
-// Rebuild a live pane tree from a snapshot, spawning a pane per leaf.
-function buildNode(snap, tabId) {
-  if (!snap || !snap.children) {
-    const p = createPane({ cwd: snap ? snap.cwd || '' : '' });
-    p.tabId = tabId;
-    return { leaf: p.id };
-  }
-  return {
-    dir: snap.dir === 'col' ? 'col' : 'row',
-    sizes: Array.isArray(snap.sizes) ? snap.sizes.slice() : undefined,
-    children: snap.children.map((c) => buildNode(c, tabId)),
-  };
-}
-
 // ---------- Persistence ----------
-// Stores tab name/order + each tab's full pane tree (directions, sizes, and
-// per-pane cwd). cwds are refreshed on tab-switch and at quit.
+// Stores tab name/order + each tab's active-pane cwd. Splits are not persisted;
+// a restored tab reopens as a single pane in that directory.
 function saveLayout() {
   const arr = [...listEl.children].map((li) => {
     const t = tabs.get(li.dataset.id);
     if (!t) return null;
-    return { name: t.name, custom: !!t.custom, tree: serializeNode(t.root) };
+    const ap = panes.get(t.activePaneId);
+    return { name: t.name, custom: !!t.custom, cwd: ap ? ap.cwd || '' : '' };
   }).filter(Boolean);
   localStorage.setItem(LS_LAYOUT, JSON.stringify(arr));
 }
@@ -183,12 +116,12 @@ function createPane(opts) {
   termsEl.appendChild(el);
 
   const term = new Terminal({
-    fontFamily: settings.fontFamily,
-    fontSize: settings.fontSize,
-    cursorBlink: settings.cursorBlink,
+    fontFamily: 'Menlo, "SF Mono", Monaco, "Courier New", monospace',
+    fontSize: fontSize,
+    cursorBlink: true,
     allowProposedApi: true,
-    theme: termTheme(),
-    scrollback: settings.scrollback,
+    theme: THEME,
+    scrollback: 10000,
   });
   const fit = new FitAddon.FitAddon();
   const search = new SearchAddon.SearchAddon();
@@ -243,17 +176,11 @@ function createPane(opts) {
     if (pane.tabId) setActivePane(pane.tabId, id);
   });
 
+  // ⌘⌫ deletes the whole input line (Ctrl-E then Ctrl-U).
   term.attachCustomKeyEventHandler((e) => {
-    if (e.type !== 'keydown') return true;
-    // ⌘⌫ deletes the whole input line (Ctrl-E then Ctrl-U).
-    if (e.metaKey && e.key === 'Backspace') {
+    if (e.type === 'keydown' && e.metaKey && e.key === 'Backspace') {
       window.term.input(id, '\x05\x15');
       return false;
-    }
-    // ⌘⌥ + arrows move focus between split panes.
-    if (e.metaKey && e.altKey) {
-      const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[e.key];
-      if (dir) { focusPaneDir(dir); return false; }
     }
     return true;
   });
@@ -318,17 +245,10 @@ function createTab(opts) {
   wireDrag(item);
   listEl.appendChild(item);
 
-  // Build the pane tree: from a saved tree if present, else a single pane.
-  let root;
-  if (opts && opts.tree) {
-    root = buildNode(opts.tree, id);
-  } else {
-    const pane = createPane({ cwd: (opts && opts.cwd) || '' });
-    pane.tabId = id;
-    root = { leaf: pane.id };
-  }
+  const pane = createPane({ cwd: (opts && opts.cwd) || '' });
+  pane.tabId = id;
 
-  const tab = { id, name, custom, item, container, root, activePaneId: firstLeafId(root) };
+  const tab = { id, name, custom, item, container, root: { leaf: pane.id }, activePaneId: pane.id };
   tabs.set(id, tab);
 
   renderTab(tab);
@@ -468,45 +388,13 @@ function setActivePane(tabId, paneId) {
   if (p) requestAnimationFrame(() => { p.fit.fit(); p.term.focus(); if (!findbar.hidden) runFind(); });
 }
 
-// Move focus to the nearest pane in a given direction within the active tab.
-function focusPaneDir(dir) {
-  const tab = tabs.get(activeTabId);
-  if (!tab) return;
-  const ids = leafIds(tab.root);
-  if (ids.length < 2) return;
-  const cur = panes.get(tab.activePaneId);
-  if (!cur) return;
-  const cr = cur.el.getBoundingClientRect();
-  const cx = cr.left + cr.width / 2;
-  const cy = cr.top + cr.height / 2;
-
-  let best = null;
-  let bestDist = Infinity;
-  for (const id of ids) {
-    if (id === cur.id) continue;
-    const r = panes.get(id).el.getBoundingClientRect();
-    const dx = (r.left + r.width / 2) - cx;
-    const dy = (r.top + r.height / 2) - cy;
-    const ok = dir === 'left' ? (dx < 0 && Math.abs(dx) >= Math.abs(dy))
-      : dir === 'right' ? (dx > 0 && Math.abs(dx) >= Math.abs(dy))
-      : dir === 'up' ? (dy < 0 && Math.abs(dy) >= Math.abs(dx))
-      : (dy > 0 && Math.abs(dy) >= Math.abs(dx));
-    if (!ok) continue;
-    const dist = dx * dx + dy * dy;
-    if (dist < bestDist) { bestDist = dist; best = id; }
-  }
-  if (best) setActivePane(tab.id, best);
-}
-
 // ---------- Split / close panes ----------
-async function splitActive(dir, cwdOverride) {
+async function splitActive(dir) {
   const tab = tabs.get(activeTabId);
   if (!tab) return;
-  let cwd = cwdOverride || '';
-  if (!cwdOverride) {
-    const cur = panes.get(tab.activePaneId);
-    if (cur) { await refreshCwd(cur); cwd = cur.cwd; }
-  }
+  const cur = panes.get(tab.activePaneId);
+  let cwd = '';
+  if (cur) { await refreshCwd(cur); cwd = cur.cwd; }
 
   const np = createPane({ cwd });
   np.tabId = tab.id;
@@ -545,20 +433,6 @@ function closePane(paneId) {
   // Last pane in the tab → close the whole tab.
   if (countLeaves(tab.root) <= 1) { closeTab(tab.id); return; }
 
-  // Remember the richer layout before whittling it down, so reopening a tab
-  // that was closed pane-by-pane (⌘W) brings its splits back.
-  tab._reopenTree = serializeNode(tab.root);
-
-  // Remember this single closed pane so ⌘⇧T can split it back into the tab.
-  const par = findParent(tab.root, paneId, null);
-  closedStack.push({
-    kind: 'pane',
-    tabId: tab.id,
-    cwd: pane.cwd || '',
-    dir: par && par.parent ? par.parent.dir : 'row',
-  });
-  if (closedStack.length > 20) closedStack.shift();
-
   // Prune the leaf and collapse any now-single-child split, keeping the
   // surviving children's sizes aligned.
   const prune = (node) => {
@@ -592,33 +466,9 @@ function closeActivePane() {
   if (tab) closePane(tab.activePaneId);
 }
 
-function reopenClosed() {
-  if (!closedStack.length) return;
-  const snap = closedStack.pop();
-  if (snap.kind === 'pane' && tabs.has(snap.tabId)) {
-    // Re-add a single closed pane back into its (still-open) tab.
-    activateTab(snap.tabId);
-    splitActive(snap.dir || 'row', snap.cwd);
-  } else if (snap.kind === 'pane') {
-    // Its tab is gone — reopen as a fresh tab in that directory.
-    createTab({ cwd: snap.cwd });
-  } else {
-    createTab(snap); // whole-tab snapshot (has name/custom/tree)
-  }
-  saveLayout();
-}
-
 function closeTab(id) {
   const tab = tabs.get(id);
   if (!tab) return;
-  // Snapshot for reopen (⌘⇧T). If the tab was whittled to one pane via ⌘W, use
-  // the richer pre-close layout; if closed as a whole (sidebar ×), use current.
-  const tree = (tab._reopenTree && countLeaves(tab.root) <= 1)
-    ? tab._reopenTree
-    : serializeNode(tab.root);
-  closedStack.push({ kind: 'tab', name: tab.name, custom: tab.custom, tree });
-  if (closedStack.length > 20) closedStack.shift();
-
   for (const pid of leafIds(tab.root)) {
     const p = panes.get(pid);
     if (p) { window.term.kill(pid); p.term.dispose(); panes.delete(pid); }
@@ -707,13 +557,13 @@ function getDragAfterElement(y) {
 
 // ---------- Font size ----------
 function setFont(n) {
-  settings.fontSize = Math.max(8, Math.min(28, n));
+  fontSize = Math.max(8, Math.min(28, n));
   for (const p of panes.values()) {
-    p.term.options.fontSize = settings.fontSize;
+    p.term.options.fontSize = fontSize;
     try { p.fit.fit(); } catch (_) {}
     window.term.resize(p.id, p.term.cols, p.term.rows);
   }
-  saveSettings();
+  localStorage.setItem(LS_FONT, String(fontSize));
 }
 
 // ---------- Clear / Copy / Paste / Select All (active pane) ----------
@@ -721,15 +571,9 @@ function clearActive() {
   const p = activePane();
   if (p) p.term.clear();
 }
-// When any text field is focused, ⌘C/⌘V/⌘A act on it (not the terminal).
-function focusedInput() {
-  const el = document.activeElement;
-  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') ? el : null;
-}
 function copyActive() {
-  const el = focusedInput();
-  if (el) {
-    const t = (el.value || '').substring(el.selectionStart || 0, el.selectionEnd || 0);
+  if (document.activeElement === findInput) {
+    const t = findInput.value.substring(findInput.selectionStart, findInput.selectionEnd);
     if (t) window.term.clipboardWrite(t);
     return;
   }
@@ -741,22 +585,19 @@ function copyActive() {
 async function pasteActive() {
   const text = await window.term.clipboardRead();
   if (!text) return;
-  const el = focusedInput();
-  if (el) {
-    const a = el.selectionStart != null ? el.selectionStart : el.value.length;
-    const b = el.selectionEnd != null ? el.selectionEnd : el.value.length;
-    el.value = el.value.slice(0, a) + text + el.value.slice(b);
-    const pos = a + text.length;
-    try { el.selectionStart = el.selectionEnd = pos; } catch (_) {}
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+  if (document.activeElement === findInput) {
+    const a = findInput.selectionStart;
+    const b = findInput.selectionEnd;
+    findInput.value = findInput.value.slice(0, a) + text + findInput.value.slice(b);
+    findInput.selectionStart = findInput.selectionEnd = a + text.length;
+    runFind();
     return;
   }
   const p = activePane();
   if (p) p.term.paste(text);
 }
 function selectAllActive() {
-  const el = focusedInput();
-  if (el) { el.select(); return; }
+  if (document.activeElement === findInput) { findInput.select(); return; }
   const p = activePane();
   if (p) p.term.selectAll();
 }
@@ -819,13 +660,11 @@ window.term.onMenu((action) => {
   switch (action) {
     case 'new': createTab(); saveLayout(); break;
     case 'close': closeActivePane(); break;
-    case 'reopen': reopenClosed(); break;
     case 'split-right': splitActive('row'); break;
     case 'split-down': splitActive('col'); break;
-    case 'font-in': setFont(settings.fontSize + 1); break;
-    case 'font-out': setFont(settings.fontSize - 1); break;
+    case 'font-in': setFont(fontSize + 1); break;
+    case 'font-out': setFont(fontSize - 1); break;
     case 'font-reset': setFont(13); break;
-    case 'settings': openSettings(); break;
     case 'clear': clearActive(); break;
     case 'find': toggleFind(); break;
     case 'copy': copyActive(); break;
@@ -908,52 +747,14 @@ function toggleSidebar() {
   fitActiveTerm();
 }
 
-// ---------- Settings panel (⌘,) ----------
-const settingsOverlay = document.getElementById('settings-overlay');
-
-function openSettings() {
-  document.getElementById('set-accent').value = settings.accent;
-  document.getElementById('set-fontfamily').value = settings.fontFamily;
-  document.getElementById('set-fontsize').value = settings.fontSize;
-  document.getElementById('set-scrollback').value = settings.scrollback;
-  document.getElementById('set-cursorblink').checked = settings.cursorBlink;
-  document.getElementById('set-tfocus').value = settings.timer.focus;
-  document.getElementById('set-tshort').value = settings.timer.short;
-  document.getElementById('set-tlong').value = settings.timer.long;
-  settingsOverlay.hidden = false;
-}
-function closeSettings() {
-  settingsOverlay.hidden = true;
-  const p = activePane();
-  if (p) p.term.focus();
-}
-
-(function wireSettings() {
-  const onInput = (id, fn) => document.getElementById(id).addEventListener('input', fn);
-  const clampInt = (v, lo, hi) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
-
-  onInput('set-accent', (e) => { settings.accent = e.target.value; saveSettings(); applySettings(); });
-  onInput('set-fontfamily', (e) => { settings.fontFamily = e.target.value; saveSettings(); applySettings(); });
-  onInput('set-fontsize', (e) => { const v = clampInt(e.target.value, 8, 28); if (v) { settings.fontSize = v; saveSettings(); applySettings(); } });
-  onInput('set-scrollback', (e) => { const v = clampInt(e.target.value, 100, 100000); if (v) { settings.scrollback = v; saveSettings(); applySettings(); } });
-  document.getElementById('set-cursorblink').addEventListener('change', (e) => { settings.cursorBlink = e.target.checked; saveSettings(); applySettings(); });
-  onInput('set-tfocus', (e) => { const v = clampInt(e.target.value, 1, 180); if (v) { settings.timer.focus = v; saveSettings(); if (timerApplyDurations) timerApplyDurations(); } });
-  onInput('set-tshort', (e) => { const v = clampInt(e.target.value, 1, 180); if (v) { settings.timer.short = v; saveSettings(); if (timerApplyDurations) timerApplyDurations(); } });
-  onInput('set-tlong', (e) => { const v = clampInt(e.target.value, 1, 180); if (v) { settings.timer.long = v; saveSettings(); if (timerApplyDurations) timerApplyDurations(); } });
-
-  document.getElementById('settings-done').addEventListener('click', closeSettings);
-  settingsOverlay.addEventListener('mousedown', (e) => { if (e.target === settingsOverlay) closeSettings(); });
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !settingsOverlay.hidden) { e.preventDefault(); closeSettings(); }
-  });
-})();
-
 // ---------- Pomodoro timer ----------
 // Focus / short break / long break (after every 4th focus). Durations are
 // configurable (click the time when stopped). setInterval runs only while
 // counting down — zero idle cost when off. Tracks focus sessions per day.
 (function timer() {
   const LABELS = { focus: 'Focus', short: 'Break', long: 'Long Break' };
+  const DEFAULT_MIN = { focus: 25, short: 5, long: 15 };
+  const LS_DUR = 'termrack.timer.durations';
   const LS_TODAY = 'termrack.timer.today';
 
   const root = document.getElementById('timer');
@@ -962,8 +763,11 @@ function closeSettings() {
   const toggleBtn = document.getElementById('timer-toggle');
   const todayEl = document.getElementById('timer-today');
 
-  // Durations come from Settings (minutes).
-  const dur = (m) => settings.timer[m] * 60;
+  // Durations (minutes), persisted.
+  const mins = { ...DEFAULT_MIN };
+  try { Object.assign(mins, JSON.parse(localStorage.getItem(LS_DUR) || '{}')); } catch (_) {}
+  const dur = (m) => mins[m] * 60;
+  const saveDur = () => localStorage.setItem(LS_DUR, JSON.stringify(mins));
 
   // "Completed focus sessions today", reset when the date rolls over.
   function todayKey() {
@@ -1037,22 +841,16 @@ function closeSettings() {
     start();
   }
 
-  // Click the time to edit the current mode's minutes (pauses if running).
+  // Click the time (when stopped) to edit the current mode's minutes.
   function editDuration() {
-    if (displayEl.classList.contains('editing')) return;
-    if (running) pause();
+    if (running || displayEl.classList.contains('editing')) return;
     displayEl.classList.add('editing');
     const input = document.createElement('input');
     input.id = 'timer-edit';
-    input.type = 'text';
-    input.inputMode = 'numeric';
-    input.maxLength = 3;
-    input.value = String(settings.timer[mode]);
-    input.setAttribute('aria-label', 'Minutes');
-    // Only allow digits as the user types.
-    input.addEventListener('input', () => {
-      input.value = input.value.replace(/[^0-9]/g, '');
-    });
+    input.type = 'number';
+    input.min = '1';
+    input.max = '180';
+    input.value = String(mins[mode]);
     displayEl.textContent = '';
     displayEl.appendChild(input);
     input.focus();
@@ -1064,8 +862,8 @@ function closeSettings() {
       done = true;
       const v = parseInt(input.value, 10);
       if (save && Number.isFinite(v) && v >= 1 && v <= 180) {
-        settings.timer[mode] = v;
-        saveSettings();
+        mins[mode] = v;
+        saveDur();
         remaining = dur(mode);
       }
       displayEl.classList.remove('editing');
@@ -1086,113 +884,7 @@ function closeSettings() {
     setMode(mode === 'focus' ? 'short' : 'focus');
   });
   displayEl.addEventListener('click', editDuration);
-
-  // Let Settings update durations live (only resets the clock when stopped).
-  timerApplyDurations = () => { if (!running) { remaining = dur(mode); render(); } };
-
   render();
-})();
-
-// ---------- YouTube player window ----------
-// Plays the real youtube.com page in a child window (reliable video; a docked
-// BrowserView only painted after a manual resize). The OS window gives native
-// drag / resize / minimize.
-const ytdock = {
-  show: (url) => window.term.ytOpen(url),
-  hide: () => window.term.ytClose(),
-};
-
-// ---------- Focus music ----------
-// Local file, direct audio URL, or YouTube (hidden iframe). Manual play only;
-// source + volume persist across restarts.
-(function music() {
-  const LS_MUSIC = 'termrack.music';
-  const input = document.getElementById('music-input');
-  const toggleBtn = document.getElementById('music-toggle');
-  const pickBtn = document.getElementById('music-pick');
-  const fileInput = document.getElementById('music-file');
-  const vol = document.getElementById('music-vol');
-  const status = document.getElementById('music-status');
-  const ytBox = document.getElementById('music-yt');
-
-  if (ytBox) ytBox.remove(); // legacy inline embed element, no longer used
-
-  const audio = new Audio();
-  audio.loop = true;
-
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(LS_MUSIC) || '{}'); } catch (_) {}
-  let volume = typeof saved.volume === 'number' ? saved.volume : 0.6;
-  let playing = false;
-  let ytActive = false; // YouTube playing in the popout window
-  input.value = saved.src || '';
-  vol.value = String(Math.round(volume * 100));
-  audio.volume = volume;
-
-  const save = () => localStorage.setItem(LS_MUSIC, JSON.stringify({ src: input.value.trim(), volume }));
-  const setBtn = () => { toggleBtn.textContent = playing ? '⏸' : '▶'; };
-  const setStatus = (m) => { status.textContent = m || ''; };
-
-  function parse(str) {
-    const s = (str || '').trim();
-    if (!s) return null;
-    // Keep the full URL for YouTube so playlists / radio mixes are preserved.
-    if (/(?:youtube\.com\/|youtu\.be\/)/i.test(s)) return { type: 'youtube', url: s };
-    if (/^https?:\/\//i.test(s)) return { type: 'url', url: s };
-    return { type: 'file', path: s };
-  }
-
-  function toFileUrl(p) {
-    if (/^file:\/\//i.test(p)) return p;
-    return 'file://' + p.split('/').map(encodeURIComponent).join('/');
-  }
-
-  function play() {
-    const src = parse(input.value);
-    if (!src) { setStatus('Add a file or URL'); return; }
-    save();
-    if (src.type === 'youtube') {
-      audio.pause();
-      ytdock.show(src.url); // plays the real YouTube page in the docked frame
-      ytActive = true;
-      playing = true; setBtn();
-      setStatus('YouTube — docked player');
-    } else {
-      if (ytActive) { ytdock.hide(); ytActive = false; }
-      const url = src.type === 'file' ? toFileUrl(src.path) : src.url;
-      if (audio.src !== url) audio.src = url;
-      audio.volume = volume;
-      audio.play()
-        .then(() => { playing = true; setBtn(); setStatus(''); })
-        .catch(() => { setStatus('Couldn’t play that source'); });
-    }
-  }
-  function pause() {
-    if (ytActive) { ytdock.hide(); ytActive = false; } else audio.pause();
-    playing = false; setBtn();
-  }
-  function toggle() { if (playing) pause(); else play(); }
-
-  toggleBtn.addEventListener('click', toggle);
-  input.addEventListener('change', () => { save(); if (playing) { pause(); play(); } });
-  pickBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => {
-    const f = fileInput.files[0];
-    if (f) {
-      const p = window.term.pathForFile(f) || f.path || '';
-      if (p) { input.value = p; save(); setStatus(f.name); }
-    }
-    fileInput.value = '';
-  });
-  vol.addEventListener('input', () => {
-    volume = Math.max(0, Math.min(1, parseInt(vol.value, 10) / 100));
-    audio.volume = volume;
-    save();
-  });
-  audio.addEventListener('error', () => { if (!ytActive) setStatus('Couldn’t load audio'); });
-
-  // If the user closes the popout window, reflect that in the UI.
-  window.term.onYtClosed(() => { if (ytActive) { ytActive = false; playing = false; setBtn(); } });
 })();
 
 // ---------- Boot: restore saved layout, else one fresh terminal ----------

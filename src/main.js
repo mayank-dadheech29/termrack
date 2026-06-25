@@ -91,6 +91,12 @@ function createWindow() {
 
   mainWindow = win;
 
+  // Keep the music window docked to the corner and grouped with the app.
+  win.on('move', followYt);
+  win.on('resize', followYt);
+  win.on('minimize', () => { if (ytWin && !ytWin.isDestroyed()) ytWin.hide(); });
+  win.on('restore', () => { if (ytWin && !ytWin.isDestroyed()) ytWin.show(); });
+
   // The app loads from file:// (no real origin), so YouTube's embed rejects it
   // with "Error 153". Give requests to YouTube a valid Referer/Origin so the
   // focus-music embed plays.
@@ -175,6 +181,60 @@ ipcMain.handle('pty:cwd', async (_evt, { id }) => {
 // Clipboard bridge (the sandboxed renderer can't touch the clipboard directly).
 ipcMain.on('clip:write', (_evt, text) => { if (typeof text === 'string') clipboard.writeText(text); });
 ipcMain.handle('clip:read', () => clipboard.readText());
+
+// Focus-music YouTube playback. Embeds fail for videos whose owners disabled
+// embedding, so we play the real youtube.com page in a child window (reliable
+// video; a BrowserView only painted after a manual resize). It's parented to the
+// main window, so it groups with the app, floats above it, and closes with it —
+// and as a real window it's natively draggable, resizable, and minimizable.
+let ytWin = null;
+const YT_W = 400;
+const YT_H = 232;
+const YT_GAP = 20;
+function ytCorner() {
+  if (!mainWindow || mainWindow.isDestroyed()) return { x: undefined, y: undefined };
+  const b = mainWindow.getBounds();
+  let w = YT_W;
+  let h = YT_H;
+  if (ytWin && !ytWin.isDestroyed()) { const s = ytWin.getSize(); w = s[0]; h = s[1]; }
+  return {
+    x: Math.round(b.x + b.width - w - YT_GAP),
+    y: Math.round(b.y + b.height - h - YT_GAP),
+  };
+}
+function followYt() {
+  if (ytWin && !ytWin.isDestroyed() && mainWindow && !mainWindow.isDestroyed()) {
+    const p = ytCorner();
+    ytWin.setPosition(p.x, p.y);
+  }
+}
+ipcMain.on('yt:open', (_evt, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return;
+  if (ytWin && !ytWin.isDestroyed()) { ytWin.loadURL(url); ytWin.show(); return; }
+  const pos = ytCorner();
+  ytWin = new BrowserWindow({
+    width: YT_W,
+    height: YT_H,
+    x: pos.x,
+    y: pos.y,
+    frame: false,
+    resizable: true,
+    minWidth: 280,
+    minHeight: 160,
+    roundedCorners: true,
+    backgroundColor: '#000000',
+    parent: mainWindow || undefined,
+    webPreferences: { sandbox: true },
+  });
+  ytWin.loadURL(url);
+  // Keep it pinned to the corner even after the user resizes it.
+  ytWin.on('resize', () => { if (mainWindow && !mainWindow.isDestroyed()) followYt(); });
+  ytWin.on('closed', () => {
+    ytWin = null;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('yt:closed');
+  });
+});
+ipcMain.on('yt:close', () => { if (ytWin && !ytWin.isDestroyed()) ytWin.close(); });
 
 // On quit, give the renderer a chance to capture every tab's cwd and persist
 // the layout before we tear the PTYs down. Fall back to quitting if it stalls.

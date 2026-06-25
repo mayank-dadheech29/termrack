@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld('term', {
   clipboardWrite: (text) => ipcRenderer.send('clip:write', text),
   clipboardRead: () => ipcRenderer.invoke('clip:read'),
   pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch (_) { return ''; } },
+  ytOpen: (url) => ipcRenderer.send('yt:open', url),
+  ytClose: () => ipcRenderer.send('yt:close'),
+  onYtClosed: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('yt:closed', handler);
+    return () => ipcRenderer.removeListener('yt:closed', handler);
+  },
 
   onData: (cb) => {
     const handler = (_e, payload) => cb(payload);
