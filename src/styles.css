@@ -219,7 +219,8 @@ body {
 }
 #music-input:focus { border-color: var(--accent); }
 .music-bottom { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-#music-dock { display: flex; gap: 4px; margin-top: 6px; }
+#music-dock { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+#music-dock .md-sep { flex: 0 0 6px; }
 #music-dock button {
   width: 22px;
   height: 22px;

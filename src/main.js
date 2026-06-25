@@ -245,6 +245,14 @@ ipcMain.on('yt:close', () => { if (ytWin && !ytWin.isDestroyed()) ytWin.close();
 ipcMain.on('yt:corner', (_evt, side) => {
   if (['tl', 'tr', 'bl', 'br'].includes(side)) { ytSide = side; followYt(); }
 });
+ipcMain.on('yt:hide', () => { if (ytWin && !ytWin.isDestroyed()) ytWin.hide(); });
+ipcMain.on('yt:show', () => { if (ytWin && !ytWin.isDestroyed()) { ytWin.show(); followYt(); } });
+ipcMain.on('yt:size', (_evt, s) => {
+  if (ytWin && !ytWin.isDestroyed() && s) {
+    ytWin.setSize(Math.max(280, s.w | 0), Math.max(160, s.h | 0));
+    followYt();
+  }
+});
 
 // On quit, give the renderer a chance to capture every tab's cwd and persist
 // the layout before we tear the PTYs down. Fall back to quitting if it stalls.

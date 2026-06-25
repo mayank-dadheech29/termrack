@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('term', {
   ytOpen: (url) => ipcRenderer.send('yt:open', url),
   ytClose: () => ipcRenderer.send('yt:close'),
   ytSetCorner: (side) => ipcRenderer.send('yt:corner', side),
+  ytHide: () => ipcRenderer.send('yt:hide'),
+  ytShow: () => ipcRenderer.send('yt:show'),
+  ytSize: (s) => ipcRenderer.send('yt:size', s),
   onYtClosed: (cb) => {
     const handler = () => cb();
     ipcRenderer.on('yt:closed', handler);

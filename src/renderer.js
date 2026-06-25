@@ -1114,8 +1114,12 @@ const ytdock = {
   const vol = document.getElementById('music-vol');
   const status = document.getElementById('music-status');
   const ytBox = document.getElementById('music-yt');
-  const dockBtns = [...document.querySelectorAll('#music-dock button')];
+  const dockBtns = [...document.querySelectorAll('#music-dock button[data-corner]')];
+  const ytMinBtn = document.getElementById('yt-min');
+  const ytSmallerBtn = document.getElementById('yt-smaller');
+  const ytLargerBtn = document.getElementById('yt-larger');
   const LS_CORNER = 'termrack.ytcorner';
+  const LS_SIZE = 'termrack.ytsize';
 
   if (ytBox) ytBox.remove(); // legacy inline embed element, no longer used
 
@@ -1141,6 +1145,27 @@ const ytdock = {
     window.term.ytSetCorner(corner);
   }));
 
+  // Video window size (persisted) and minimize state.
+  const ASPECT = 232 / 400;
+  let size = { w: 400, h: 232 };
+  try { Object.assign(size, JSON.parse(localStorage.getItem(LS_SIZE) || '{}')); } catch (_) {}
+  let ytMinimized = false;
+  const saveSize = () => localStorage.setItem(LS_SIZE, JSON.stringify(size));
+  function applySize() { window.term.ytSize(size); }
+  function resizeBy(factor) {
+    size.w = Math.round(Math.max(280, Math.min(900, size.w * factor)));
+    size.h = Math.round(size.w * ASPECT);
+    saveSize();
+    if (ytActive && !ytMinimized) applySize();
+  }
+  ytSmallerBtn.addEventListener('click', () => resizeBy(1 / 1.15));
+  ytLargerBtn.addEventListener('click', () => resizeBy(1.15));
+  ytMinBtn.addEventListener('click', () => {
+    if (!ytActive) return;
+    ytMinimized = !ytMinimized;
+    if (ytMinimized) window.term.ytHide(); else window.term.ytShow();
+  });
+
   const save = () => localStorage.setItem(LS_MUSIC, JSON.stringify({ src: input.value.trim(), volume }));
   const setBtn = () => { toggleBtn.textContent = playing ? '⏸' : '▶'; };
   const setStatus = (m) => { status.textContent = m || ''; };
@@ -1165,8 +1190,10 @@ const ytdock = {
     save();
     if (src.type === 'youtube') {
       audio.pause();
+      ytMinimized = false;
       window.term.ytSetCorner(corner); // dock to the chosen corner before opening
       ytdock.show(src.url);
+      window.term.ytSize(size);        // apply saved size
       ytActive = true;
       playing = true; setBtn();
       setStatus('YouTube — docked player');
@@ -1205,7 +1232,7 @@ const ytdock = {
   audio.addEventListener('error', () => { if (!ytActive) setStatus('Couldn’t load audio'); });
 
   // If the user closes the popout window, reflect that in the UI.
-  window.term.onYtClosed(() => { if (ytActive) { ytActive = false; playing = false; setBtn(); } });
+  window.term.onYtClosed(() => { if (ytActive) { ytActive = false; ytMinimized = false; playing = false; setBtn(); } });
 })();
 
 // ---------- Boot: restore saved layout, else one fresh terminal ----------

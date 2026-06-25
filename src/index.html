@@ -36,11 +36,15 @@
           <input id="music-vol" type="range" min="0" max="100" />
           <span id="music-status"></span>
         </div>
-        <div id="music-dock" title="Dock the video to a corner">
+        <div id="music-dock" title="Dock / size the video">
           <button data-corner="tl" title="Top-left">◰</button>
           <button data-corner="tr" title="Top-right">◳</button>
           <button data-corner="bl" title="Bottom-left">◱</button>
           <button data-corner="br" title="Bottom-right">◲</button>
+          <span class="md-sep"></span>
+          <button id="yt-min" title="Minimize / restore video">—</button>
+          <button id="yt-smaller" title="Smaller">－</button>
+          <button id="yt-larger" title="Larger">＋</button>
         </div>
         <div id="music-yt"></div>
         <input id="music-file" type="file" accept="audio/*" hidden />
