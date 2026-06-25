@@ -1,5 +1,7 @@
 # Termrack
 
+![Termrack demo](docs/demo.gif)
+
 A small, fully-local, cmux-style terminal app for macOS: a sidebar of terminal
 sessions on the left, the selected session's terminal filling the pane on the
 right. Each session is a **real shell** running in a pseudo-terminal (PTY), so it
