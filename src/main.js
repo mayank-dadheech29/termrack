@@ -90,6 +90,19 @@ function createWindow() {
   });
 
   mainWindow = win;
+
+  // The app loads from file:// (no real origin), so YouTube's embed rejects it
+  // with "Error 153". Give requests to YouTube a valid Referer/Origin so the
+  // focus-music embed plays.
+  win.webContents.session.webRequest.onBeforeSendHeaders(
+    { urls: ['*://*.youtube.com/*', '*://*.ytimg.com/*', '*://*.googlevideo.com/*', '*://*.google.com/*'] },
+    (details, callback) => {
+      details.requestHeaders.Referer = 'https://www.youtube.com/';
+      details.requestHeaders.Origin = 'https://www.youtube.com';
+      callback({ requestHeaders: details.requestHeaders });
+    },
+  );
+
   win.loadFile(path.join(__dirname, 'index.html'));
   buildMenu(win);
 
