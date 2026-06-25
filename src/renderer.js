@@ -1145,8 +1145,9 @@ function closeSettings() {
   function ensureYt(id) {
     if (ytId === id && document.getElementById('yt-frame')) return;
     ytId = id;
-    ytBox.innerHTML = `<iframe id="yt-frame" width="0" height="0" frameborder="0" allow="autoplay" `
-      + `src="https://www.youtube.com/embed/${id}?enablejsapi=1&autoplay=1&loop=1&playlist=${id}&controls=0"></iframe>`;
+    // A real, visible (small) frame — YouTube won't autoplay a 0×0 hidden one.
+    ytBox.innerHTML = `<iframe id="yt-frame" allow="autoplay; encrypted-media" frameborder="0" `
+      + `src="https://www.youtube.com/embed/${id}?enablejsapi=1&autoplay=1&loop=1&playlist=${id}"></iframe>`;
   }
 
   function setVolume() {
@@ -1164,7 +1165,7 @@ function closeSettings() {
       ytPost('playVideo');
       setVolume();
       playing = true; setBtn();
-      setStatus('YouTube — private/unavailable videos won’t play');
+      setStatus('YouTube');
     } else {
       ytBox.innerHTML = ''; ytId = null;
       const url = src.type === 'file' ? toFileUrl(src.path) : src.url;
