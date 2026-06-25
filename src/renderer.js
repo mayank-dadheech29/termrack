@@ -27,6 +27,8 @@ const LS_LAYOUT = 'termrack.layout';
 const DEFAULT_SETTINGS = {
   theme: 'dark',
   accent: '#4f8cff',
+  termFg: null, // override terminal text color (null = use theme)
+  termBg: null, // override terminal background color (null = use theme)
   fontFamily: 'Menlo, monospace',
   fontSize: 13,
   scrollback: 10000,
@@ -105,7 +107,12 @@ const THEMES = {
   },
 };
 function activeTheme() { return THEMES[settings.theme] || THEMES.dark; }
-function termTheme() { return { ...activeTheme().xterm, cursor: settings.accent, cursorAccent: activeTheme().xterm.background }; }
+function termTheme() {
+  const x = { ...activeTheme().xterm };
+  if (settings.termFg) x.foreground = settings.termFg;
+  if (settings.termBg) x.background = settings.termBg;
+  return { ...x, cursor: settings.accent, cursorAccent: x.background };
+}
 
 // Apply design tokens (CSS vars) + accent to the document.
 function applyTheme() {
@@ -1081,9 +1088,14 @@ const palette = (function paletteModule() {
 // ---------- Settings panel (⌘,) ----------
 const settingsOverlay = document.getElementById('settings-overlay');
 
+function refreshColorPickers() {
+  document.getElementById('set-fg').value = settings.termFg || activeTheme().xterm.foreground;
+  document.getElementById('set-bg').value = settings.termBg || activeTheme().xterm.background;
+}
 function openSettings() {
   document.getElementById('set-theme').value = settings.theme;
   document.getElementById('set-accent').value = settings.accent;
+  refreshColorPickers();
   document.getElementById('set-fontfamily').value = settings.fontFamily;
   document.getElementById('set-fontsize').value = settings.fontSize;
   document.getElementById('set-scrollback').value = settings.scrollback;
@@ -1103,8 +1115,17 @@ function closeSettings() {
   const onInput = (id, fn) => document.getElementById(id).addEventListener('input', fn);
   const clampInt = (v, lo, hi) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
 
-  document.getElementById('set-theme').addEventListener('change', (e) => setTheme(e.target.value));
+  document.getElementById('set-theme').addEventListener('change', (e) => { setTheme(e.target.value); refreshColorPickers(); });
   onInput('set-accent', (e) => { settings.accent = e.target.value; saveSettings(); applySettings(); });
+  onInput('set-fg', (e) => { settings.termFg = e.target.value; saveSettings(); applySettings(); });
+  onInput('set-bg', (e) => { settings.termBg = e.target.value; saveSettings(); applySettings(); });
+  document.getElementById('set-colors-reset').addEventListener('click', () => {
+    settings.termFg = null;
+    settings.termBg = null;
+    saveSettings();
+    applySettings();
+    refreshColorPickers();
+  });
   onInput('set-fontfamily', (e) => { settings.fontFamily = e.target.value; saveSettings(); applySettings(); });
   onInput('set-fontsize', (e) => { const v = clampInt(e.target.value, 8, 28); if (v) { settings.fontSize = v; saveSettings(); applySettings(); } });
   onInput('set-scrollback', (e) => { const v = clampInt(e.target.value, 100, 100000); if (v) { settings.scrollback = v; saveSettings(); applySettings(); } });

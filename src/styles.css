@@ -632,6 +632,16 @@ body {
   height: 18px;
   accent-color: var(--accent);
 }
+.settings-btn {
+  background: var(--item-active);
+  color: var(--text);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-btn:hover { background: var(--item-hover); }
 .settings-sep { height: 1px; background: var(--sidebar-border); margin: 12px 0; }
 .settings-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 #settings-done {
