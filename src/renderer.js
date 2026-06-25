@@ -1084,6 +1084,112 @@ function closeSettings() {
   render();
 })();
 
+// ---------- Focus music ----------
+// Local file, direct audio URL, or YouTube (hidden iframe). Manual play only;
+// source + volume persist across restarts.
+(function music() {
+  const LS_MUSIC = 'termrack.music';
+  const input = document.getElementById('music-input');
+  const toggleBtn = document.getElementById('music-toggle');
+  const pickBtn = document.getElementById('music-pick');
+  const fileInput = document.getElementById('music-file');
+  const vol = document.getElementById('music-vol');
+  const status = document.getElementById('music-status');
+  const ytBox = document.getElementById('music-yt');
+
+  const audio = new Audio();
+  audio.loop = true;
+
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LS_MUSIC) || '{}'); } catch (_) {}
+  let volume = typeof saved.volume === 'number' ? saved.volume : 0.6;
+  let playing = false;
+  let ytId = null;
+  input.value = saved.src || '';
+  vol.value = String(Math.round(volume * 100));
+  audio.volume = volume;
+
+  const save = () => localStorage.setItem(LS_MUSIC, JSON.stringify({ src: input.value.trim(), volume }));
+  const setBtn = () => { toggleBtn.textContent = playing ? '⏸' : '▶'; };
+  const setStatus = (m) => { status.textContent = m || ''; };
+
+  function parse(str) {
+    const s = (str || '').trim();
+    if (!s) return null;
+    const yt = s.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/)|youtu\.be\/)([\w-]{11})/);
+    if (yt) return { type: 'youtube', id: yt[1] };
+    if (/^https?:\/\//i.test(s)) return { type: 'url', url: s };
+    return { type: 'file', path: s };
+  }
+
+  function toFileUrl(p) {
+    if (/^file:\/\//i.test(p)) return p;
+    return 'file://' + p.split('/').map(encodeURIComponent).join('/');
+  }
+
+  function ytPost(func, args) {
+    const f = document.getElementById('yt-frame');
+    if (f && f.contentWindow) {
+      f.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
+    }
+  }
+  function ensureYt(id) {
+    if (ytId === id && document.getElementById('yt-frame')) return;
+    ytId = id;
+    ytBox.innerHTML = `<iframe id="yt-frame" width="0" height="0" frameborder="0" allow="autoplay" `
+      + `src="https://www.youtube.com/embed/${id}?enablejsapi=1&autoplay=1&loop=1&playlist=${id}&controls=0"></iframe>`;
+  }
+
+  function setVolume() {
+    audio.volume = volume;
+    ytPost('setVolume', [Math.round(volume * 100)]);
+  }
+
+  function play() {
+    const src = parse(input.value);
+    if (!src) { setStatus('Add a file or URL'); return; }
+    save();
+    if (src.type === 'youtube') {
+      audio.pause();
+      ensureYt(src.id);
+      ytPost('playVideo');
+      setVolume();
+      playing = true; setBtn();
+      setStatus('YouTube — private/unavailable videos won’t play');
+    } else {
+      ytBox.innerHTML = ''; ytId = null;
+      const url = src.type === 'file' ? toFileUrl(src.path) : src.url;
+      if (audio.src !== url) audio.src = url;
+      audio.play()
+        .then(() => { playing = true; setBtn(); setStatus(''); })
+        .catch(() => { setStatus('Couldn’t play that source'); });
+    }
+  }
+  function pause() {
+    if (ytId) ytPost('pauseVideo'); else audio.pause();
+    playing = false; setBtn();
+  }
+  function toggle() { if (playing) pause(); else play(); }
+
+  toggleBtn.addEventListener('click', toggle);
+  input.addEventListener('change', () => { save(); if (playing) { pause(); play(); } });
+  pickBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (f) {
+      const p = window.term.pathForFile(f) || f.path || '';
+      if (p) { input.value = p; save(); setStatus(f.name); }
+    }
+    fileInput.value = '';
+  });
+  vol.addEventListener('input', () => {
+    volume = Math.max(0, Math.min(1, parseInt(vol.value, 10) / 100));
+    setVolume();
+    save();
+  });
+  audio.addEventListener('error', () => { if (!ytId) setStatus('Couldn’t load audio'); });
+})();
+
 // ---------- Boot: restore saved layout, else one fresh terminal ----------
 (function boot() {
   let saved = [];

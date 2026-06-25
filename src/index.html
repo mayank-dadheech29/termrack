@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; media-src 'self' file: blob: https:; frame-src https://www.youtube.com https://www.youtube-nocookie.com; img-src 'self' data:;" />
   <title>Termrack</title>
   <link rel="stylesheet" href="../node_modules/@xterm/xterm/css/xterm.css" />
   <link rel="stylesheet" href="styles.css" />
@@ -24,6 +24,20 @@
           <button id="timer-skip" title="Skip to next phase">⤳</button>
         </div>
         <span id="timer-today">🍅 0 today</span>
+      </div>
+      <div id="music">
+        <div class="music-top">
+          <button id="music-toggle" title="Play / Pause">▶</button>
+          <input id="music-input" type="text" spellcheck="false"
+                 placeholder="Audio file or URL (incl. YouTube)" />
+          <button id="music-pick" title="Choose audio file">📁</button>
+        </div>
+        <div class="music-bottom">
+          <input id="music-vol" type="range" min="0" max="100" />
+          <span id="music-status"></span>
+        </div>
+        <div id="music-yt"></div>
+        <input id="music-file" type="file" accept="audio/*" hidden />
       </div>
       <ul id="session-list"></ul>
     </aside>

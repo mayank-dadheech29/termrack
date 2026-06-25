@@ -183,6 +183,53 @@ body {
 }
 #timer-controls button:hover { background: var(--accent); }
 
+/* ---------- Focus music ---------- */
+#music {
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  -webkit-app-region: no-drag;
+}
+.music-top { display: flex; align-items: center; gap: 6px; }
+#music-toggle, #music-pick {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--item-active);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+#music-toggle:hover, #music-pick:hover { background: var(--accent); }
+#music-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--sidebar-bg);
+  color: var(--text);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  outline: none;
+}
+#music-input:focus { border-color: var(--accent); }
+.music-bottom { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+#music-vol { flex: 1; accent-color: var(--accent); min-width: 0; }
+#music-status {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+#music-yt { position: absolute; width: 0; height: 0; overflow: hidden; }
+
 #session-list {
   list-style: none;
   overflow-y: auto;

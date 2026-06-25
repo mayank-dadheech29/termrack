@@ -87,6 +87,23 @@ After `npm run deploy`, launch **Termrack** from Spotlight, the Dock, or
 - **🍅 daily counter** — counts focus sessions completed today; resets at
   midnight.
 
+### Focus music
+- A small player under the timer plays background music while you work.
+- Paste an **audio file path**, a **direct audio URL** (e.g. a lofi/radio
+  stream), or a **YouTube URL** — or click 📁 to pick a local file.
+- **▶ / ⏸** plays/pauses; a volume slider sits below. The source and volume
+  **persist** across restarts (set it once). Playback is manual (not tied to
+  the timer).
+- YouTube plays via a hidden embed; private/unavailable videos can't play (a
+  note is shown), and free YouTube may include ads.
+
+### Settings (`⌘,`)
+- **Appearance:** accent color, terminal font family, font size.
+- **Terminal:** scrollback size, cursor blink.
+- **Timer:** default focus / short-break / long-break minutes.
+- Everything applies live to all panes and persists. Esc / click-outside /
+  Done closes it. The whole UI is driven by CSS design tokens.
+
 ---
 
 ## Keyboard shortcuts
@@ -106,6 +123,7 @@ After `npm run deploy`, launch **Termrack** from Spotlight, the Dock, or
 | `⌘⌫` | Delete whole input line |
 | `⌘+` / `⌘-` / `⌘0` | Font bigger / smaller / reset |
 | `⌘K` | Clear scrollback |
+| `⌘,` | Open Settings |
 
 All of these are also available in the menu bar (Edit / View).
 
@@ -115,8 +133,9 @@ All of these are also available in the menu bar (Edit / View).
 
 **Saved:** tab names, tab order, each tab's **full split-pane layout**
 (directions, sizes, and per-pane working directory), font size, sidebar width,
-sidebar collapsed state, timer durations, today's focus count. `⌘⇧T` also
-restores a closed tab's full split layout.
+sidebar collapsed state, timer durations, today's focus count, appearance
+settings (accent, font, scrollback, cursor), and the focus-music source +
+volume. `⌘⇧T` also restores a closed tab's (or pane's) full split layout.
 
 **Not saved (yet):** scrollback contents, and running programs (a shell's
 directory is restored, but not the process that was running in it).
@@ -127,8 +146,8 @@ directory is restored, but not the process that was running in it).
 
 Planned, roughly in priority order:
 
-- **Settings window** — font family, theme, default shell, timer defaults, and a
-  consolidated set of design tokens (colors / spacing / radii) to tune the look.
+- **Settings v2** — theme presets (incl. light), default shell & starting
+  directory, custom font import.
 - **Profiles** — launch different shells or pre-set commands per tab
   (e.g. a Python REPL, an SSH host).
 - **SSH bookmarks** — quick-connect to saved remote hosts.

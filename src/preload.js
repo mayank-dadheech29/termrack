@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // A narrow, safe bridge. The renderer never touches Node or ipcRenderer directly.
 contextBridge.exposeInMainWorld('term', {
@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('term', {
   flushed: () => ipcRenderer.send('app:flushed'),
   clipboardWrite: (text) => ipcRenderer.send('clip:write', text),
   clipboardRead: () => ipcRenderer.invoke('clip:read'),
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch (_) { return ''; } },
 
   onData: (cb) => {
     const handler = (_e, payload) => cb(payload);
