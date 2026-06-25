@@ -31,7 +31,8 @@ After `npm run deploy`, launch **Termrack** from Spotlight, the Dock, or
 - **Rename** by double-clicking the tab's name (custom names stick and won't be
   overwritten by the shell title).
 - **Reorder** by dragging tabs up/down.
-- **Close** with the hover `×` or `⌘W`. **Reopen** the last closed tab with `⌘⇧T`.
+- **Close** with the hover `×` or `⌘W`. **Reopen** the last closed tab *or
+  split pane* with `⌘⇧T` (a closed pane is split back into its tab).
 
 ### Split panes
 - **Split right** with `⌘D`, **split down** with `⌘⇧D` — each pane is its own
@@ -94,7 +95,7 @@ After `npm run deploy`, launch **Termrack** from Spotlight, the Dock, or
 |----------|--------|
 | `⌘T` | New terminal (tab) |
 | `⌘W` | Close active pane (closes tab if last pane) |
-| `⌘⇧T` | Reopen last closed tab |
+| `⌘⇧T` | Reopen last closed tab or pane |
 | `⌘1`–`⌘9` | Jump to tab N |
 | `⌘B` | Toggle sidebar |
 | `⌘D` | Split pane right |

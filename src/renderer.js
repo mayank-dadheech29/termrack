@@ -8,7 +8,7 @@
 
 const tabs = new Map();   // tabId -> tab
 const panes = new Map();  // paneId -> pane
-const closedTabs = [];    // stack of recently closed tab snapshots (for ⌘⇧T)
+const closedStack = []; // recently closed tabs & panes, newest last (for ⌘⇧T)
 let activeTabId = null;
 let counter = 0;
 let fontSize = loadFontSize();
@@ -460,12 +460,14 @@ function focusPaneDir(dir) {
 }
 
 // ---------- Split / close panes ----------
-async function splitActive(dir) {
+async function splitActive(dir, cwdOverride) {
   const tab = tabs.get(activeTabId);
   if (!tab) return;
-  const cur = panes.get(tab.activePaneId);
-  let cwd = '';
-  if (cur) { await refreshCwd(cur); cwd = cur.cwd; }
+  let cwd = cwdOverride || '';
+  if (!cwdOverride) {
+    const cur = panes.get(tab.activePaneId);
+    if (cur) { await refreshCwd(cur); cwd = cur.cwd; }
+  }
 
   const np = createPane({ cwd });
   np.tabId = tab.id;
@@ -508,6 +510,16 @@ function closePane(paneId) {
   // that was closed pane-by-pane (⌘W) brings its splits back.
   tab._reopenTree = serializeNode(tab.root);
 
+  // Remember this single closed pane so ⌘⇧T can split it back into the tab.
+  const par = findParent(tab.root, paneId, null);
+  closedStack.push({
+    kind: 'pane',
+    tabId: tab.id,
+    cwd: pane.cwd || '',
+    dir: par && par.parent ? par.parent.dir : 'row',
+  });
+  if (closedStack.length > 20) closedStack.shift();
+
   // Prune the leaf and collapse any now-single-child split, keeping the
   // surviving children's sizes aligned.
   const prune = (node) => {
@@ -542,8 +554,18 @@ function closeActivePane() {
 }
 
 function reopenClosed() {
-  if (!closedTabs.length) return;
-  createTab(closedTabs.pop());
+  if (!closedStack.length) return;
+  const snap = closedStack.pop();
+  if (snap.kind === 'pane' && tabs.has(snap.tabId)) {
+    // Re-add a single closed pane back into its (still-open) tab.
+    activateTab(snap.tabId);
+    splitActive(snap.dir || 'row', snap.cwd);
+  } else if (snap.kind === 'pane') {
+    // Its tab is gone — reopen as a fresh tab in that directory.
+    createTab({ cwd: snap.cwd });
+  } else {
+    createTab(snap); // whole-tab snapshot (has name/custom/tree)
+  }
   saveLayout();
 }
 
@@ -555,8 +577,8 @@ function closeTab(id) {
   const tree = (tab._reopenTree && countLeaves(tab.root) <= 1)
     ? tab._reopenTree
     : serializeNode(tab.root);
-  closedTabs.push({ name: tab.name, custom: tab.custom, tree });
-  if (closedTabs.length > 10) closedTabs.shift();
+  closedStack.push({ kind: 'tab', name: tab.name, custom: tab.custom, tree });
+  if (closedStack.length > 20) closedStack.shift();
 
   for (const pid of leafIds(tab.root)) {
     const p = panes.get(pid);
