@@ -504,6 +504,10 @@ function closePane(paneId) {
   // Last pane in the tab → close the whole tab.
   if (countLeaves(tab.root) <= 1) { closeTab(tab.id); return; }
 
+  // Remember the richer layout before whittling it down, so reopening a tab
+  // that was closed pane-by-pane (⌘W) brings its splits back.
+  tab._reopenTree = serializeNode(tab.root);
+
   // Prune the leaf and collapse any now-single-child split, keeping the
   // surviving children's sizes aligned.
   const prune = (node) => {
@@ -546,8 +550,12 @@ function reopenClosed() {
 function closeTab(id) {
   const tab = tabs.get(id);
   if (!tab) return;
-  // Snapshot for reopen (⌘⇧T) — full pane tree, captured before panes die.
-  closedTabs.push({ name: tab.name, custom: tab.custom, tree: serializeNode(tab.root) });
+  // Snapshot for reopen (⌘⇧T). If the tab was whittled to one pane via ⌘W, use
+  // the richer pre-close layout; if closed as a whole (sidebar ×), use current.
+  const tree = (tab._reopenTree && countLeaves(tab.root) <= 1)
+    ? tab._reopenTree
+    : serializeNode(tab.root);
+  closedTabs.push({ name: tab.name, custom: tab.custom, tree });
   if (closedTabs.length > 10) closedTabs.shift();
 
   for (const pid of leafIds(tab.root)) {
