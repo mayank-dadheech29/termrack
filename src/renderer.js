@@ -902,6 +902,18 @@ function fitActiveTerm() {
   });
 })();
 
+// ---------- Tools section collapse ----------
+(function tools() {
+  const el = document.getElementById('tools');
+  const btn = document.getElementById('tools-toggle');
+  const LS = 'termrack.toolsCollapsed';
+  if (localStorage.getItem(LS) === '1') el.classList.add('collapsed');
+  btn.addEventListener('click', () => {
+    const collapsed = el.classList.toggle('collapsed');
+    localStorage.setItem(LS, collapsed ? '1' : '0');
+  });
+})();
+
 function toggleSidebar() {
   const collapsed = appEl.classList.toggle('sidebar-collapsed');
   localStorage.setItem(LS_SIDEBAR_COLLAPSED, collapsed ? '1' : '0');

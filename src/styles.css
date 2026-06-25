@@ -100,6 +100,30 @@ body {
 }
 #new-session:hover { background: var(--accent); }
 
+/* ---------- Tools (collapsible: timer + music) ---------- */
+#tools-toggle {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 20px);
+  margin: 0 10px 6px;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 6px;
+}
+#tools-toggle:hover { background: var(--item-hover); color: var(--text); }
+#tools-toggle .chev { transition: transform 0.15s ease; display: inline-block; }
+#tools.collapsed #tools-toggle .chev { transform: rotate(-90deg); }
+#tools.collapsed #tools-body { display: none; }
+
 /* ---------- Pomodoro timer ---------- */
 #timer {
   margin: 0 10px 8px;
