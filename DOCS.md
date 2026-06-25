@@ -91,11 +91,12 @@ After `npm run deploy`, launch **Termrack** from Spotlight, the Dock, or
 - A small player under the timer plays background music while you work.
 - Paste an **audio file path**, a **direct audio URL** (e.g. a lofi/radio
   stream), or a **YouTube URL** — or click 📁 to pick a local file.
-- **▶ / ⏸** plays/pauses; a volume slider sits below. The source and volume
-  **persist** across restarts (set it once). Playback is manual (not tied to
-  the timer).
-- YouTube plays via a hidden embed; private/unavailable videos can't play (a
-  note is shown), and free YouTube may include ads.
+- **▶ / ⏸** plays/pauses; a volume slider sits below (volume affects file/URL
+  audio; for YouTube use its own controls). The source and volume **persist**
+  across restarts. Playback is manual (not tied to the timer).
+- YouTube opens in a small docked player window pinned to a corner of Termrack
+  (choose the corner / resize / minimize from the sidebar buttons). It follows
+  the app and closes with it. Fullscreen is disabled by design.
 
 ### Command palette (`⌘P`)
 - Fuzzy-search and run any action — new terminal, split, find, clear, font size,
@@ -153,15 +154,12 @@ directory is restored, but not the process that was running in it).
 
 Planned, roughly in priority order:
 
-- **Settings v2** — theme presets (incl. light), default shell & starting
-  directory, custom font import.
 - **Profiles** — launch different shells or pre-set commands per tab
   (e.g. a Python REPL, an SSH host).
 - **SSH bookmarks** — quick-connect to saved remote hosts.
 - **Broadcast input** — type once into all panes of a tab at once.
-- **Draggable pane layout polish** — proportional resize on window resize,
-  subtler active-pane highlight.
-- **README screenshot / GIF** and a short demo.
+- **Settings v2** — default shell & starting directory, custom font import,
+  more themes.
 - **Distribution** — code signing + notarization so the app opens cleanly on
   other Macs, plus in-app auto-update.
 
