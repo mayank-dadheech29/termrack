@@ -1136,24 +1136,17 @@ function closeSettings() {
     return 'file://' + p.split('/').map(encodeURIComponent).join('/');
   }
 
-  function ytPost(func, args) {
-    const f = document.getElementById('yt-frame');
-    if (f && f.contentWindow) {
-      f.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
-    }
-  }
-  function ensureYt(id) {
-    if (ytId === id && document.getElementById('yt-frame')) return;
+  // Start YouTube by mounting a visible iframe; stop it by unmounting.
+  // (We avoid enablejsapi/postMessage: it needs a real page origin, which a
+  // file://-loaded Electron app doesn't have — that caused "Error 153".)
+  function mountYt(id) {
     ytId = id;
-    // A real, visible (small) frame — YouTube won't autoplay a 0×0 hidden one.
     ytBox.innerHTML = `<iframe id="yt-frame" allow="autoplay; encrypted-media" frameborder="0" `
-      + `src="https://www.youtube.com/embed/${id}?enablejsapi=1&autoplay=1&loop=1&playlist=${id}"></iframe>`;
+      + `src="https://www.youtube.com/embed/${id}?autoplay=1&loop=1&playlist=${id}&rel=0"></iframe>`;
   }
+  function unmountYt() { ytBox.innerHTML = ''; }
 
-  function setVolume() {
-    audio.volume = volume;
-    ytPost('setVolume', [Math.round(volume * 100)]);
-  }
+  function setVolume() { audio.volume = volume; }
 
   function play() {
     const src = parse(input.value);
@@ -1161,22 +1154,21 @@ function closeSettings() {
     save();
     if (src.type === 'youtube') {
       audio.pause();
-      ensureYt(src.id);
-      ytPost('playVideo');
-      setVolume();
+      mountYt(src.id);
       playing = true; setBtn();
-      setStatus('YouTube');
+      setStatus('YouTube (volume via its own controls)');
     } else {
-      ytBox.innerHTML = ''; ytId = null;
+      unmountYt(); ytId = null;
       const url = src.type === 'file' ? toFileUrl(src.path) : src.url;
       if (audio.src !== url) audio.src = url;
+      setVolume();
       audio.play()
         .then(() => { playing = true; setBtn(); setStatus(''); })
         .catch(() => { setStatus('Couldn’t play that source'); });
     }
   }
   function pause() {
-    if (ytId) ytPost('pauseVideo'); else audio.pause();
+    if (ytId) unmountYt(); else audio.pause();
     playing = false; setBtn();
   }
   function toggle() { if (playing) pause(); else play(); }
