@@ -97,7 +97,13 @@ After `npm run deploy`, launch **Termrack** from Spotlight, the Dock, or
 - YouTube plays via a hidden embed; private/unavailable videos can't play (a
   note is shown), and free YouTube may include ads.
 
+### Command palette (`⌘P`)
+- Fuzzy-search and run any action — new terminal, split, find, clear, font size,
+  switch theme, jump to a tab, open settings, and more. Arrow keys to navigate,
+  Enter to run, Esc to close.
+
 ### Settings (`⌘,`)
+- **Theme:** Dark, Light, Midnight, or Solarized (applies live to UI + terminals).
 - **Appearance:** accent color, terminal font family, font size.
 - **Terminal:** scrollback size, cursor blink.
 - **Timer:** default focus / short-break / long-break minutes.
@@ -124,6 +130,7 @@ After `npm run deploy`, launch **Termrack** from Spotlight, the Dock, or
 | `⌘+` / `⌘-` / `⌘0` | Font bigger / smaller / reset |
 | `⌘K` | Clear scrollback |
 | `⌘,` | Open Settings |
+| `⌘P` | Command palette |
 
 All of these are also available in the menu bar (Edit / View).
 
@@ -152,8 +159,6 @@ Planned, roughly in priority order:
   (e.g. a Python REPL, an SSH host).
 - **SSH bookmarks** — quick-connect to saved remote hosts.
 - **Broadcast input** — type once into all panes of a tab at once.
-- **Command palette** (`⌘P`) — fuzzy-run any action.
-- **Themes** — light/dark and custom color schemes with a switcher.
 - **Draggable pane layout polish** — proportional resize on window resize,
   subtler active-pane highlight.
 - **README screenshot / GIF** and a short demo.
