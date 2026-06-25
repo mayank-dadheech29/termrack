@@ -721,9 +721,15 @@ function clearActive() {
   const p = activePane();
   if (p) p.term.clear();
 }
+// When any text field is focused, ⌘C/⌘V/⌘A act on it (not the terminal).
+function focusedInput() {
+  const el = document.activeElement;
+  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') ? el : null;
+}
 function copyActive() {
-  if (document.activeElement === findInput) {
-    const t = findInput.value.substring(findInput.selectionStart, findInput.selectionEnd);
+  const el = focusedInput();
+  if (el) {
+    const t = (el.value || '').substring(el.selectionStart || 0, el.selectionEnd || 0);
     if (t) window.term.clipboardWrite(t);
     return;
   }
@@ -735,19 +741,22 @@ function copyActive() {
 async function pasteActive() {
   const text = await window.term.clipboardRead();
   if (!text) return;
-  if (document.activeElement === findInput) {
-    const a = findInput.selectionStart;
-    const b = findInput.selectionEnd;
-    findInput.value = findInput.value.slice(0, a) + text + findInput.value.slice(b);
-    findInput.selectionStart = findInput.selectionEnd = a + text.length;
-    runFind();
+  const el = focusedInput();
+  if (el) {
+    const a = el.selectionStart != null ? el.selectionStart : el.value.length;
+    const b = el.selectionEnd != null ? el.selectionEnd : el.value.length;
+    el.value = el.value.slice(0, a) + text + el.value.slice(b);
+    const pos = a + text.length;
+    try { el.selectionStart = el.selectionEnd = pos; } catch (_) {}
+    el.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
   const p = activePane();
   if (p) p.term.paste(text);
 }
 function selectAllActive() {
-  if (document.activeElement === findInput) { findInput.select(); return; }
+  const el = focusedInput();
+  if (el) { el.select(); return; }
   const p = activePane();
   if (p) p.term.selectAll();
 }
