@@ -1114,6 +1114,8 @@ const ytdock = {
   const vol = document.getElementById('music-vol');
   const status = document.getElementById('music-status');
   const ytBox = document.getElementById('music-yt');
+  const dockBtns = [...document.querySelectorAll('#music-dock button')];
+  const LS_CORNER = 'termrack.ytcorner';
 
   if (ytBox) ytBox.remove(); // legacy inline embed element, no longer used
 
@@ -1124,10 +1126,20 @@ const ytdock = {
   try { saved = JSON.parse(localStorage.getItem(LS_MUSIC) || '{}'); } catch (_) {}
   let volume = typeof saved.volume === 'number' ? saved.volume : 0.6;
   let playing = false;
-  let ytActive = false; // YouTube playing in the popout window
+  let ytActive = false; // YouTube playing in the docked window
+  let corner = localStorage.getItem(LS_CORNER) || 'br';
   input.value = saved.src || '';
   vol.value = String(Math.round(volume * 100));
   audio.volume = volume;
+
+  function applyCornerUI() { dockBtns.forEach((b) => b.classList.toggle('active', b.dataset.corner === corner)); }
+  applyCornerUI();
+  dockBtns.forEach((b) => b.addEventListener('click', () => {
+    corner = b.dataset.corner;
+    localStorage.setItem(LS_CORNER, corner);
+    applyCornerUI();
+    window.term.ytSetCorner(corner);
+  }));
 
   const save = () => localStorage.setItem(LS_MUSIC, JSON.stringify({ src: input.value.trim(), volume }));
   const setBtn = () => { toggleBtn.textContent = playing ? '⏸' : '▶'; };
@@ -1153,7 +1165,8 @@ const ytdock = {
     save();
     if (src.type === 'youtube') {
       audio.pause();
-      ytdock.show(src.url); // plays the real YouTube page in the docked frame
+      window.term.ytSetCorner(corner); // dock to the chosen corner before opening
+      ytdock.show(src.url);
       ytActive = true;
       playing = true; setBtn();
       setStatus('YouTube — docked player');

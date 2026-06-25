@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('term', {
   pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch (_) { return ''; } },
   ytOpen: (url) => ipcRenderer.send('yt:open', url),
   ytClose: () => ipcRenderer.send('yt:close'),
+  ytSetCorner: (side) => ipcRenderer.send('yt:corner', side),
   onYtClosed: (cb) => {
     const handler = () => cb();
     ipcRenderer.on('yt:closed', handler);

@@ -188,6 +188,7 @@ ipcMain.handle('clip:read', () => clipboard.readText());
 // main window, so it groups with the app, floats above it, and closes with it —
 // and as a real window it's natively draggable, resizable, and minimizable.
 let ytWin = null;
+let ytSide = 'br'; // tl | tr | bl | br — which corner of the app to dock to
 const YT_W = 400;
 const YT_H = 232;
 const YT_GAP = 20;
@@ -197,10 +198,16 @@ function ytCorner() {
   let w = YT_W;
   let h = YT_H;
   if (ytWin && !ytWin.isDestroyed()) { const s = ytWin.getSize(); w = s[0]; h = s[1]; }
-  return {
-    x: Math.round(b.x + b.width - w - YT_GAP),
-    y: Math.round(b.y + b.height - h - YT_GAP),
-  };
+  const left = Math.round(b.x + YT_GAP);
+  const right = Math.round(b.x + b.width - w - YT_GAP);
+  const top = Math.round(b.y + YT_GAP);
+  const bottom = Math.round(b.y + b.height - h - YT_GAP);
+  switch (ytSide) {
+    case 'tl': return { x: left, y: top };
+    case 'tr': return { x: right, y: top };
+    case 'bl': return { x: left, y: bottom };
+    default: return { x: right, y: bottom };
+  }
 }
 function followYt() {
   if (ytWin && !ytWin.isDestroyed() && mainWindow && !mainWindow.isDestroyed()) {
@@ -235,6 +242,9 @@ ipcMain.on('yt:open', (_evt, url) => {
   });
 });
 ipcMain.on('yt:close', () => { if (ytWin && !ytWin.isDestroyed()) ytWin.close(); });
+ipcMain.on('yt:corner', (_evt, side) => {
+  if (['tl', 'tr', 'bl', 'br'].includes(side)) { ytSide = side; followYt(); }
+});
 
 // On quit, give the renderer a chance to capture every tab's cwd and persist
 // the layout before we tear the PTYs down. Fall back to quitting if it stalls.
